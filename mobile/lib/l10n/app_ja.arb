@@ -66,6 +66,11 @@
   "terminalNewSessionTitle": "新規セッションを起動",
   "terminalNoOtherSessions": "アタッチ可能な他のセッションがありません。",
   "terminalAttachedTabSuffix": "（アタッチ）",
+  "terminalImeInput": "IME 入力",
+  "terminalImeInputTitle": "IME 入力",
+  "terminalImeInputHint": "日本語または複数行テキストを入力",
+  "terminalImeAppendEnter": "Enter を付けて送信",
+  "terminalImeSend": "送信",
 
   "settingsTitle": "設定",
   "settingsLanguage": "言語",

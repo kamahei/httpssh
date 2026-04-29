@@ -139,6 +139,7 @@ Cloudflare credentials satisfy the edge layer. The LAN bearer still satisfies th
 - The relay keeps the session alive and stores recent output in an in-memory ring buffer.
 - Reconnecting sends a `replay` frame with recent scrollback, then resumes live output.
 - Restarting the relay kills all sessions. Sessions are not persisted to disk.
+- In the mobile terminal, tap the keyboard icon in the soft-key bar to open a temporary multiline IME input box. It lets you compose Japanese text safely, then send it with the Send button. The default appends Enter so a single-line command is submitted; turn off **Append Enter** when you only want to insert text.
 
 ## Routine Maintenance
 

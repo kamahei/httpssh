@@ -69,6 +69,11 @@
   "terminalNewSessionTitle": "Spawn new session",
   "terminalNoOtherSessions": "No other sessions to attach.",
   "terminalAttachedTabSuffix": " (attached)",
+  "terminalImeInput": "IME input",
+  "terminalImeInputTitle": "IME input",
+  "terminalImeInputHint": "Type Japanese or multiline text",
+  "terminalImeAppendEnter": "Append Enter",
+  "terminalImeSend": "Send",
 
   "settingsTitle": "Settings",
   "settingsLanguage": "Language",

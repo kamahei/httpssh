@@ -9,6 +9,7 @@ import '../models/profile.dart';
 import '../models/session_info.dart';
 import '../state/settings.dart';
 import '../terminal/resize_policy.dart';
+import '../terminal/terminal_input.dart';
 import '../terminal/terminal_session.dart';
 import '../terminal/themes.dart';
 import '../terminal/viewport_estimate.dart';
@@ -301,6 +302,22 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
     }
   }
 
+  Future<void> _openImeInput(Terminal terminal) async {
+    final result = await showModalBottomSheet<_ImeInputResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => const _ImeInputSheet(),
+    );
+    if (result == null || result.text.isEmpty || !mounted) return;
+    terminal.textInput(
+      terminalInputFromEditorText(
+        result.text,
+        appendEnter: result.appendEnter,
+      ),
+    );
+  }
+
   void _reorderTab(int oldIdx, int newIdx) {
     if (oldIdx < newIdx) newIdx -= 1;
     setState(() {
@@ -443,6 +460,7 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
           else
             _SoftKeyBar(
               onSpecial: (s) => active.terminalSession.terminal.textInput(s),
+              onImeInput: () => _openImeInput(active.terminalSession.terminal),
             ),
         ],
       ),
@@ -670,8 +688,9 @@ class _TerminalBody extends StatelessWidget {
 }
 
 class _SoftKeyBar extends StatefulWidget {
-  const _SoftKeyBar({required this.onSpecial});
+  const _SoftKeyBar({required this.onSpecial, required this.onImeInput});
   final void Function(String) onSpecial;
+  final VoidCallback onImeInput;
 
   @override
   State<_SoftKeyBar> createState() => _SoftKeyBarState();
@@ -693,6 +712,7 @@ class _SoftKeyBarState extends State<_SoftKeyBar> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: SafeArea(
@@ -703,6 +723,11 @@ class _SoftKeyBarState extends State<_SoftKeyBar> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
+              _IconKeyButton(
+                icon: Icons.keyboard_alt_outlined,
+                tooltip: t.terminalImeInput,
+                onTap: widget.onImeInput,
+              ),
               _KeyButton(label: 'Tab', onTap: () => _send('\t')),
               _KeyButton(label: 'Esc', onTap: () => _send('\x1b')),
               _KeyButton(
@@ -720,6 +745,158 @@ class _SoftKeyBarState extends State<_SoftKeyBar> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ImeInputResult {
+  const _ImeInputResult({required this.text, required this.appendEnter});
+
+  final String text;
+  final bool appendEnter;
+}
+
+class _ImeInputSheet extends StatefulWidget {
+  const _ImeInputSheet();
+
+  @override
+  State<_ImeInputSheet> createState() => _ImeInputSheetState();
+}
+
+class _ImeInputSheetState extends State<_ImeInputSheet> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  bool _appendEnter = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {});
+  }
+
+  void _send() {
+    final text = _controller.text;
+    if (text.isEmpty) return;
+    Navigator.pop(
+      context,
+      _ImeInputResult(text: text, appendEnter: _appendEnter),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Material(
+        color: theme.colorScheme.surface,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        t.terminalImeInputTitle,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      tooltip: t.cancel,
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    minLines: 4,
+                    maxLines: null,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      hintText: t.terminalImeInputHint,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(t.terminalImeAppendEnter),
+                  value: _appendEnter,
+                  onChanged: (value) => setState(() => _appendEnter = value),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  icon: const Icon(Icons.send),
+                  label: Text(t.terminalImeSend),
+                  onPressed: _controller.text.isEmpty ? null : _send,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IconKeyButton extends StatelessWidget {
+  const _IconKeyButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      child: IconButton.filledTonal(
+        iconSize: 20,
+        padding: EdgeInsets.zero,
+        style: IconButton.styleFrom(
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
+          fixedSize: const Size(40, 32),
+          minimumSize: const Size(40, 32),
+        ),
+        icon: Icon(icon),
+        tooltip: tooltip,
+        onPressed: onTap,
       ),
     );
   }
