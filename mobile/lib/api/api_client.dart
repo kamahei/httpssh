@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../models/file_browser.dart';
 import '../models/profile.dart';
 import '../models/session_info.dart';
 
@@ -91,6 +92,35 @@ class ApiClient {
 
   Future<void> killSession(String id) async {
     await _dio.delete<void>('/api/sessions/$id');
+  }
+
+  Future<List<FileRootInfo>> listFileRoots() async {
+    final res = await _dio.get<Map<String, dynamic>>('/api/files/roots');
+    final list =
+        (res.data?['roots'] as List? ?? const []).cast<Map<String, dynamic>>();
+    return list.map(FileRootInfo.fromJson).toList();
+  }
+
+  Future<FileListResult> listFiles({
+    required String root,
+    String path = '',
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/api/files/list',
+      queryParameters: {'root': root, if (path.isNotEmpty) 'path': path},
+    );
+    return FileListResult.fromJson(res.data ?? const {});
+  }
+
+  Future<FileDocument> readFile({
+    required String root,
+    required String path,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/api/files/read',
+      queryParameters: {'root': root, 'path': path},
+    );
+    return FileDocument.fromJson(res.data ?? const {});
   }
 
   /// WebSocket URL for a session, including the `?token=<lan_bearer>`

@@ -8,12 +8,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"httpssh/relay/internal/auth"
 	"httpssh/relay/internal/conpty"
+	"httpssh/relay/internal/fileapi"
 	"httpssh/relay/internal/session"
 )
 
@@ -60,6 +64,11 @@ func (p *fakePTY) Close() error {
 
 func newTestServer(t *testing.T) (*Server, *session.Manager) {
 	t.Helper()
+	return newTestServerWithFileService(t, nil)
+}
+
+func newTestServerWithFileService(t *testing.T, fileSvc *fileapi.Service) (*Server, *session.Manager) {
+	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mgr := session.NewManager(session.Options{
 		ScrollbackBytes: 4096,
@@ -74,10 +83,11 @@ func newTestServer(t *testing.T) (*Server, *session.Manager) {
 	t.Cleanup(mgr.Shutdown)
 
 	srv := New(Options{
-		Manager: mgr,
-		Auth:    auth.Config{LANBearer: "test-bearer-32-chars-or-longer-12345", Logger: logger},
-		Logger:  logger,
-		Version: "0.0.0-test",
+		Manager:     mgr,
+		Auth:        auth.Config{LANBearer: "test-bearer-32-chars-or-longer-12345", Logger: logger},
+		FileService: fileSvc,
+		Logger:      logger,
+		Version:     "0.0.0-test",
 	})
 	return srv, mgr
 }
@@ -264,6 +274,96 @@ func TestServer_RenameMissingSession(t *testing.T) {
 	srv.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d want 404", w.Code)
+	}
+}
+
+func TestServer_FileRootsRequireAuth(t *testing.T) {
+	srv, _ := newTestServer(t)
+	r := httptest.NewRequest("GET", "/api/files/roots", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d want 401", w.Code)
+	}
+}
+
+func TestServer_FileRootsAndRead(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "note.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fileSvc, err := fileapi.NewService(fileapi.Config{
+		Roots: []fileapi.RootConfig{{ID: "main", Name: "Main", Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServerWithFileService(t, fileSvc)
+	h := srv.Handler()
+
+	r := bearerReq("GET", "/api/files/roots", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("roots status=%d body=%s", w.Code, w.Body.String())
+	}
+	var roots struct {
+		Roots []map[string]any `json:"roots"`
+	}
+	decodeJSON(t, w.Body, &roots)
+	if len(roots.Roots) != 1 || roots.Roots[0]["id"] != "main" {
+		t.Fatalf("roots=%+v", roots.Roots)
+	}
+
+	r = bearerReq("GET", "/api/files/list?root=main", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	r = bearerReq("GET", "/api/files/read?root=main&path=note.txt", nil)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("read status=%d body=%s", w.Code, w.Body.String())
+	}
+	var doc map[string]any
+	decodeJSON(t, w.Body, &doc)
+	if doc["content"] != "hello" {
+		t.Fatalf("doc=%+v", doc)
+	}
+}
+
+func TestServer_FileReadRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fileSvc, err := fileapi.NewService(fileapi.Config{
+		Roots: []fileapi.RootConfig{{ID: "main", Name: "Main", Path: root}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServerWithFileService(t, fileSvc)
+
+	r := bearerReq("GET", "/api/files/read?root=main&path="+url.QueryEscape(outside), nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s want 403", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_FileDisabled(t *testing.T) {
+	srv, _ := newTestServer(t)
+	r := bearerReq("GET", "/api/files/list?root=main", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s want 404", w.Code, w.Body.String())
 	}
 }
 

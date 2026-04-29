@@ -34,6 +34,18 @@ session:
   # How often the GC goroutine looks for stale sessions.
   reap_interval: "60s"
 
+files:
+  # Read-only file browser roots exposed through /api/files/*.
+  # Leave empty to disable the mobile file browser. Every root path must be
+  # absolute; clients can only list/read files inside these roots.
+  roots:
+    # - id: "home"
+    #   name: "Home"
+    #   path: "C:\\Users\\Owner"
+
+  # Maximum text file size the viewer will read.
+  max_file_bytes: 1048576
+
 log:
   # debug | info | warn | error
   level: "info"

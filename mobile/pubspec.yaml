@@ -24,6 +24,10 @@ dependencies:
   # Terminal emulator widget
   xterm: ^4.0.0
 
+  # Syntax highlighting for the read-only text viewer.
+  flutter_highlighting: ^0.9.0+11.8.0
+  highlighting: ^0.9.0+11.8.0
+
   # Secure storage for bearers / service tokens
   flutter_secure_storage: ^9.2.2
 

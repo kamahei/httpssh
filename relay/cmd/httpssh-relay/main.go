@@ -16,6 +16,7 @@ import (
 
 	"httpssh/relay/internal/auth"
 	"httpssh/relay/internal/config"
+	"httpssh/relay/internal/fileapi"
 	"httpssh/relay/internal/server"
 	"httpssh/relay/internal/session"
 	relaysvc "httpssh/relay/internal/svc"
@@ -126,6 +127,11 @@ func buildConfig(configPath string, addr, bearer *string, idleTimeout *time.Dura
 // Windows service handler. It blocks until ctx is canceled, then performs
 // graceful shutdown and returns.
 func runRelay(ctx context.Context, cfg *config.Config, logger *slog.Logger) error {
+	fileSvc, err := newFileService(cfg)
+	if err != nil {
+		return err
+	}
+
 	mgr := session.NewManager(session.Options{
 		ScrollbackBytes: cfg.Session.ScrollbackBytes,
 		IdleTimeout:     cfg.Session.IdleTimeout,
@@ -140,8 +146,9 @@ func runRelay(ctx context.Context, cfg *config.Config, logger *slog.Logger) erro
 			LANBearer: cfg.Auth.LANBearer,
 			Logger:    logger,
 		},
-		Logger:  logger,
-		Version: version,
+		FileService: fileSvc,
+		Logger:      logger,
+		Version:     version,
 	})
 
 	httpSrv := &http.Server{
@@ -182,6 +189,25 @@ func runRelay(ctx context.Context, cfg *config.Config, logger *slog.Logger) erro
 	}
 	logger.Info("shutdown complete", "event", "shutdown_done")
 	return nil
+}
+
+func newFileService(cfg *config.Config) (*fileapi.Service, error) {
+	roots := make([]fileapi.RootConfig, 0, len(cfg.Files.Roots))
+	for _, root := range cfg.Files.Roots {
+		roots = append(roots, fileapi.RootConfig{
+			ID:   root.ID,
+			Name: root.Name,
+			Path: root.Path,
+		})
+	}
+	svc, err := fileapi.NewService(fileapi.Config{
+		Roots:        roots,
+		MaxFileBytes: cfg.Files.MaxFileBytes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("file service: %w", err)
+	}
+	return svc, nil
 }
 
 // shellResolverFor returns a session.ShellResolver that always passes the

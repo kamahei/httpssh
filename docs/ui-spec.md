@@ -35,13 +35,32 @@ Profile editor modal fields:
 
 #### 2. Sessions Screen
 
-- AppBar title: profile name; trailing icon = `+ New session`.
+- AppBar title: profile name; trailing icons = file browser and refresh; FAB = `+ New session`.
 - Body: list of live sessions (from `GET /api/sessions`). Each row shows title, dimensions, localized last I/O relative time, and subscriber count.
 - Empty state: localized i18n message indicating there are no sessions and the user can tap `+` to create one.
 - Pull-to-refresh.
 - Tap a row → push **Terminal Screen** with that session attached.
 - Swipe a row left → action: Rename / Kill.
 - Tap `+ New session` → bottom sheet to pick shell (`pwsh` / `powershell` / `cmd`) and dimensions; on confirm, calls `POST /api/sessions` and pushes **Terminal Screen**.
+- Tap file browser icon → push **Files Screen** for the same profile.
+
+#### 2a. Files Screen
+
+- AppBar title: localized `Files`; actions: bookmarks, refresh.
+- Top controls: configured root selector, parent directory, path input, add bookmark.
+- Body: breadcrumb row and sorted directory/file list from `GET /api/files/list`.
+- Tap a directory → list that directory.
+- Tap a file → open **Text Viewer Screen**.
+- Bookmarks are stored per profile in shared preferences and contain root id, path, and label.
+- Empty state: if the relay returns no roots, explain that `files.roots` must be configured.
+
+#### 2b. Text Viewer Screen
+
+- AppBar title: file name; action: copy all.
+- AppBar title: file name; actions: copy all and syntax-highlight toggle.
+- Header: search box, match count, previous/next buttons, encoding/size metadata.
+- Body: read-only selectable monospace text from `GET /api/files/read`; when search is empty, supported code/config formats are syntax-highlighted automatically.
+- Search is case-insensitive and highlights all matches, with a stronger highlight for the current match.
 
 #### 3. Terminal Screen
 
@@ -103,6 +122,9 @@ sessionShellCmd
 terminalReconnecting
 terminalCancel
 terminalCloseTab
+filesTitle
+filesOpenFileBrowser
+filesSearch
 settingsLanguage
 settingsLanguageSystem
 settingsLanguageEnglish

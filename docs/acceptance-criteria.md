@@ -22,6 +22,8 @@ These criteria define "v1 done." They are the bar for declaring the project ship
 - AC-R8 — Two simultaneous WebSocket subscribers on the same session both receive identical `out` streams.
 - AC-R9 — `DELETE /api/sessions/{id}` returns 204 and the session is no longer in `GET /api/sessions`.
 - AC-R10 — A session with zero subscribers and `idle_timeout=5s` is killed within 65 s of last I/O.
+- AC-R16 — With `files.roots` configured, `GET /api/files/roots`, `GET /api/files/list`, and `GET /api/files/read` require the LAN bearer and return root, directory, and text-file data.
+- AC-R17 — `/api/files/*` rejects root escape attempts, binary files, and files larger than `files.max_file_bytes`.
 
 ## Relay (Non-Functional)
 
@@ -57,6 +59,7 @@ These criteria define "v1 done." They are the bar for declaring the project ship
 - AC-M6 — Toggling airplane mode for 10 s mid-command produces a "Reconnecting" banner and recovers within 30 s without losing earlier output (visible in scrollback after replay).
 - AC-M7 — Rotating the device sends a resize and the prompt re-flows correctly.
 - AC-M8 — Killing a session from the Sessions screen removes it from the list and closes any open tab.
+- AC-M12 — The mobile file browser lists configured roots, navigates directories, opens text files, syntax-highlights supported code/config files, searches within a file, copies content, and persists bookmarks per profile.
 
 ## Mobile (Localization)
 

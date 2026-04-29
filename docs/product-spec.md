@@ -78,6 +78,8 @@ Deployment topology: the relay listens on `127.0.0.1:18822` and is fronted local
 - FR-13: Mobile app UI is localized to English and Japanese using ARB files.
 - FR-14: Web client supports the same session list, create, attach, resize, multi-tab UX as the mobile app for testing.
 - FR-15: Relay logs denied authentication attempts at WARN level with the request path and remote address. Allowed authentication decisions are logged at DEBUG level; completed HTTP requests are logged at INFO level.
+- FR-16: Relay exposes read-only file browsing APIs under `/api/files/*` for configured file roots only. Requests outside configured roots are rejected.
+- FR-17: Mobile app supports a read-only file browser and text viewer with path entry, bookmarks, syntax highlighting, full-text copy, and in-file search.
 
 ## Non-Functional Requirements
 
@@ -93,7 +95,7 @@ Deployment topology: the relay listens on `127.0.0.1:18822` and is fronted local
 ## Out Of Scope
 
 - Hosting the relay on Linux or macOS.
-- File transfer (`scp`, `sftp`).
+- Write-capable file transfer (`scp`, `sftp`, upload, save, delete, rename).
 - Built-in code editor in the mobile app.
 - Multi-user account system within the relay.
 - Cluster mode / horizontal scaling.

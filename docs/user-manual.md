@@ -36,6 +36,12 @@ This manual covers installing and using `httpssh` as a single-operator tool.
      idle_timeout: "24h"
      scrollback_bytes: 4194304
      reap_interval: "60s"
+   files:
+     roots:
+       - id: "home"
+         name: "Home"
+         path: "C:\\Users\\Owner"
+     max_file_bytes: 1048576
    log:
      level: "info"
    ```
@@ -140,6 +146,19 @@ Cloudflare credentials satisfy the edge layer. The LAN bearer still satisfies th
 - Reconnecting sends a `replay` frame with recent scrollback, then resumes live output.
 - Restarting the relay kills all sessions. Sessions are not persisted to disk.
 - In the mobile terminal, tap the keyboard icon in the soft-key bar to open a temporary multiline IME input box. It lets you compose Japanese text safely, then send it with the Send button. The default appends Enter so a single-line command is submitted; turn off **Append Enter** when you only want to insert text.
+
+## Use The Mobile File Browser
+
+The mobile file browser is read-only and only exposes directories listed under `files.roots` in `config.yaml`. After editing roots, restart the relay.
+
+1. Open a profile in the mobile app.
+2. Tap the folder icon on the Sessions screen.
+3. Pick a configured root.
+4. Tap folders to navigate, or use the path button to enter a root-relative path.
+5. Tap a text file to open the viewer.
+6. Use search, previous/next match, copy all, syntax-highlight toggle, or add the current folder to bookmarks.
+
+The relay rejects paths outside configured roots, binary files, and text files larger than `files.max_file_bytes`.
 
 ## Routine Maintenance
 

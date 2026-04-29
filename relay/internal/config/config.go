@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,6 +18,7 @@ type Config struct {
 	Shell   string        `yaml:"shell"` // auto | pwsh | powershell | cmd
 	Auth    AuthConfig    `yaml:"auth"`
 	Session SessionConfig `yaml:"session"`
+	Files   FileConfig    `yaml:"files"`
 	Log     LogConfig     `yaml:"log"`
 }
 
@@ -33,6 +36,17 @@ type SessionConfig struct {
 	ReapInterval    time.Duration `yaml:"reap_interval"`
 }
 
+type FileConfig struct {
+	Roots        []FileRootConfig `yaml:"roots"`
+	MaxFileBytes int              `yaml:"max_file_bytes"`
+}
+
+type FileRootConfig struct {
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"`
+	Path string `yaml:"path"`
+}
+
 type LogConfig struct {
 	Level string `yaml:"level"` // debug | info | warn | error
 }
@@ -47,6 +61,9 @@ func Default() *Config {
 			IdleTimeout:     24 * time.Hour,
 			ScrollbackBytes: 4 << 20, // 4 MiB
 			ReapInterval:    60 * time.Second,
+		},
+		Files: FileConfig{
+			MaxFileBytes: 1 << 20, // 1 MiB
 		},
 		Log: LogConfig{Level: "info"},
 	}
@@ -91,6 +108,32 @@ func (c *Config) Validate() error {
 	}
 	if c.Session.ReapInterval <= 0 {
 		return errors.New("config: session.reap_interval must be > 0")
+	}
+	if c.Files.MaxFileBytes <= 0 {
+		return errors.New("config: files.max_file_bytes must be > 0")
+	}
+	seenRoots := map[string]struct{}{}
+	for _, root := range c.Files.Roots {
+		id := strings.TrimSpace(root.ID)
+		if id == "" {
+			return errors.New("config: files.roots[].id must be set")
+		}
+		if strings.ContainsAny(id, `/\?#`) {
+			return fmt.Errorf("config: files root id %q contains invalid characters", root.ID)
+		}
+		if _, ok := seenRoots[id]; ok {
+			return fmt.Errorf("config: duplicate files root id %q", id)
+		}
+		seenRoots[id] = struct{}{}
+		if strings.TrimSpace(root.Name) == "" {
+			return fmt.Errorf("config: files root %q name must be set", id)
+		}
+		if strings.TrimSpace(root.Path) == "" {
+			return fmt.Errorf("config: files root %q path must be set", id)
+		}
+		if !filepath.IsAbs(root.Path) {
+			return fmt.Errorf("config: files root %q path must be absolute", id)
+		}
 	}
 	switch c.Log.Level {
 	case "", "debug", "info", "warn", "error":

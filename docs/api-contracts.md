@@ -83,6 +83,62 @@ Request: `{"title":"new name"}`. Response: `200 OK` with the updated session obj
 
 Kill the session. Returns `204 No Content` on success, `404 not_found` if it does not exist. Idempotent: a second delete returns `404`.
 
+### `GET /api/files/roots`
+
+List configured read-only file roots. Returns an empty list when file browsing is not configured.
+
+```json
+{
+  "roots": [
+    { "id": "home", "name": "Home" }
+  ]
+}
+```
+
+### `GET /api/files/list?root=<id>&path=<relative-or-absolute>`
+
+List a directory under a configured file root. `path` is optional and defaults to the root. Relative paths are interpreted under the selected root. Absolute paths are accepted only when they resolve under the selected root.
+
+Response:
+
+```json
+{
+  "root": "home",
+  "path": "Documents",
+  "entries": [
+    {
+      "name": "notes.txt",
+      "path": "Documents/notes.txt",
+      "type": "file",
+      "size": 1280,
+      "modifiedAt": "2026-04-29T12:34:56Z"
+    }
+  ]
+}
+```
+
+Errors: `400 invalid_request`, `400 not_directory`, `403 forbidden`, `404 root_not_found`, `404 not_found`.
+
+### `GET /api/files/read?root=<id>&path=<relative-or-absolute>`
+
+Read a text file under a configured file root. The relay decodes UTF-8, UTF-8 BOM, UTF-16 BOM, and Shift_JIS text. Files larger than `files.max_file_bytes` are rejected.
+
+Response:
+
+```json
+{
+  "root": "home",
+  "path": "Documents/notes.txt",
+  "name": "notes.txt",
+  "size": 1280,
+  "modifiedAt": "2026-04-29T12:34:56Z",
+  "encoding": "utf-8",
+  "content": "..."
+}
+```
+
+Errors: `400 invalid_request`, `400 not_text`, `403 forbidden`, `404 root_not_found`, `404 not_found`, `413 file_too_large`.
+
 ## WebSocket Endpoint
 
 ### `GET /api/sessions/{id}/io` (Upgrade: websocket)

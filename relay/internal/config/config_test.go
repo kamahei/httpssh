@@ -45,6 +45,12 @@ session:
   reap_interval: "30s"
 log:
   level: "debug"
+files:
+  max_file_bytes: 2097152
+  roots:
+    - id: "home"
+      name: "Home"
+      path: "C:\\Users"
 `)
 	c, err := Load(p)
 	if err != nil {
@@ -64,6 +70,12 @@ log:
 	}
 	if c.Log.Level != "debug" {
 		t.Errorf("log.level=%q", c.Log.Level)
+	}
+	if c.Files.MaxFileBytes != 2097152 {
+		t.Errorf("files.max_file_bytes=%d", c.Files.MaxFileBytes)
+	}
+	if len(c.Files.Roots) != 1 || c.Files.Roots[0].ID != "home" {
+		t.Errorf("files.roots=%+v", c.Files.Roots)
 	}
 }
 
@@ -95,6 +107,61 @@ func TestValidate_BadLogLevel(t *testing.T) {
 	c.Log.Level = "verbose"
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error for bad log level")
+	}
+}
+
+func TestValidate_Files(t *testing.T) {
+	abs := filepath.Join(t.TempDir(), "root")
+	cases := []struct {
+		name string
+		edit func(*Config)
+	}{
+		{
+			name: "bad max file bytes",
+			edit: func(c *Config) { c.Files.MaxFileBytes = 0 },
+		},
+		{
+			name: "missing id",
+			edit: func(c *Config) {
+				c.Files.Roots = []FileRootConfig{{Name: "Root", Path: abs}}
+			},
+		},
+		{
+			name: "missing name",
+			edit: func(c *Config) {
+				c.Files.Roots = []FileRootConfig{{ID: "root", Path: abs}}
+			},
+		},
+		{
+			name: "missing path",
+			edit: func(c *Config) {
+				c.Files.Roots = []FileRootConfig{{ID: "root", Name: "Root"}}
+			},
+		},
+		{
+			name: "relative path",
+			edit: func(c *Config) {
+				c.Files.Roots = []FileRootConfig{{ID: "root", Name: "Root", Path: "relative"}}
+			},
+		},
+		{
+			name: "duplicate id",
+			edit: func(c *Config) {
+				c.Files.Roots = []FileRootConfig{
+					{ID: "root", Name: "Root", Path: abs},
+					{ID: "root", Name: "Other", Path: abs},
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			tc.edit(c)
+			if err := c.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 

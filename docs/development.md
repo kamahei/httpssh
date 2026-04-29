@@ -14,6 +14,7 @@ Requirements:
 
 - Go 1.22 or later.
 - Windows 10 1809 or later for real ConPTY runtime validation.
+- The relay uses `golang.org/x/text` for Shift_JIS decoding in the read-only file viewer API.
 
 Common commands:
 

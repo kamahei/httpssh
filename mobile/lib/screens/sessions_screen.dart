@@ -10,6 +10,7 @@ import '../models/session_info.dart';
 import '../state/settings.dart';
 import '../terminal/resize_policy.dart';
 import '../terminal/viewport_estimate.dart';
+import 'file_browser_screen.dart';
 import 'terminal_workspace.dart';
 
 class SessionsScreen extends ConsumerStatefulWidget {
@@ -140,6 +141,14 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
     }
   }
 
+  Future<void> _openFiles() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FileBrowserScreen(profile: widget.profile),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
@@ -147,6 +156,11 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
       appBar: AppBar(
         title: Text(widget.profile.name),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.folder_outlined),
+            tooltip: t.filesOpenFileBrowser,
+            onPressed: _openFiles,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: t.sessionsRefresh,

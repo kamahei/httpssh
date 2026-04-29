@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"httpssh/relay/internal/auth"
+	"httpssh/relay/internal/fileapi"
 	"httpssh/relay/internal/session"
 )
 
@@ -22,14 +23,16 @@ type Server struct {
 	startedAt time.Time
 	version   string
 	mw        func(http.Handler) http.Handler
+	files     *fileapi.Service
 }
 
 // Options configures Server.
 type Options struct {
-	Manager *session.Manager
-	Auth    auth.Config
-	Logger  *slog.Logger
-	Version string
+	Manager     *session.Manager
+	Auth        auth.Config
+	FileService *fileapi.Service
+	Logger      *slog.Logger
+	Version     string
 }
 
 // New constructs a Server.
@@ -46,6 +49,7 @@ func New(opts Options) *Server {
 		startedAt: time.Now(),
 		version:   opts.Version,
 		mw:        auth.Middleware(opts.Auth),
+		files:     opts.FileService,
 	}
 }
 
@@ -73,6 +77,9 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("PATCH /api/sessions/{id}", s.handleRenameSession)
 	apiMux.HandleFunc("DELETE /api/sessions/{id}", s.handleKillSession)
 	apiMux.HandleFunc("GET /api/sessions/{id}/io", s.handleWebSocket)
+	apiMux.HandleFunc("GET /api/files/roots", s.handleFileRoots)
+	apiMux.HandleFunc("GET /api/files/list", s.handleFileList)
+	apiMux.HandleFunc("GET /api/files/read", s.handleFileRead)
 
 	root := http.NewServeMux()
 	root.Handle("/api/", s.mw(apiMux))
@@ -174,6 +181,76 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type fileRootsResponse struct {
+	Roots []fileapi.RootInfo `json:"roots"`
+}
+
+func (s *Server) handleFileRoots(w http.ResponseWriter, _ *http.Request) {
+	roots := s.files.Roots()
+	if roots == nil {
+		roots = []fileapi.RootInfo{}
+	}
+	writeJSON(w, http.StatusOK, fileRootsResponse{Roots: roots})
+}
+
+func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		s.writeFileError(w, fileapi.ErrDisabled)
+		return
+	}
+	root := r.URL.Query().Get("root")
+	if root == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "root is required")
+		return
+	}
+	result, err := s.files.List(root, r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		s.writeFileError(w, fileapi.ErrDisabled)
+		return
+	}
+	root := r.URL.Query().Get("root")
+	if root == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "root is required")
+		return
+	}
+	result, err := s.files.Read(root, r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) writeFileError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, fileapi.ErrDisabled):
+		writeError(w, http.StatusNotFound, "files_disabled", "file browsing is not configured")
+	case errors.Is(err, fileapi.ErrRootNotFound):
+		writeError(w, http.StatusNotFound, "root_not_found", err.Error())
+	case errors.Is(err, fileapi.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, fileapi.ErrForbidden):
+		writeError(w, http.StatusForbidden, "forbidden", err.Error())
+	case errors.Is(err, fileapi.ErrNotDirectory):
+		writeError(w, http.StatusBadRequest, "not_directory", err.Error())
+	case errors.Is(err, fileapi.ErrNotText):
+		writeError(w, http.StatusBadRequest, "not_text", err.Error())
+	case errors.Is(err, fileapi.ErrTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", err.Error())
+	default:
+		s.logger.Error("file api failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "file operation failed")
+	}
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {

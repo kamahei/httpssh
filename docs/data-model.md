@@ -56,6 +56,19 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `shellResolver func(name string) (string, error)` — resolves `auto`, `pwsh`, `powershell`, or `cmd` to an executable path.
 - Operations: `Create`, `Get`, `List`, `Rename`, `Kill`, `Shutdown`, and background reaping on the configured `reap_interval`. Resizes are performed on the `Session` returned by `Get`.
 
+### `FileRoot`
+
+- Purpose: A configured read-only filesystem root exposed to authenticated clients.
+- Identifier: `ID` from `files.roots[].id`.
+- Fields:
+  - `ID string` — stable root id used by `/api/files/*`.
+  - `Name string` — display label for mobile UI.
+  - `Path string` — absolute, symlink-resolved Windows directory path.
+- Invariants:
+  - Root ids are unique and contain no path separators.
+  - Clients can only list/read paths that remain under the root after cleaning and symlink resolution.
+  - The relay never writes, deletes, renames, or uploads files through this API.
+
 ### `subscriber`
 
 - Purpose: One WebSocket subscriber to a session.
@@ -93,6 +106,15 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `pendingInput Queue<String>` — typed-but-not-yet-sent characters during reconnect.
   - `lastError String?`.
 
+#### `FileBookmark`
+
+- Purpose: Per-profile shortcut to a file browser location.
+- Storage: Shared preferences, keyed by profile id.
+- Fields:
+  - `rootId String`
+  - `path String` — root-relative path, empty for the root.
+  - `label String`
+
 ### Web Client (browser localStorage)
 
 - `httpssh.lanBearer` — stored in localStorage and sent as `Authorization: Bearer ...` on REST and `?token=...` on WebSocket connections for the current origin.
@@ -106,10 +128,13 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
 - "Send keystroke" → directly `conpty.Write(payload)`; no intermediate queueing.
 - "Reap idle sessions" → goroutine ranges `byID` under RLock, collects `Detached` sessions whose `LastIO` is older than `idleTimeout` minus current sub count == 0; upgrades to Lock to remove and `Kill`.
 - "Multi-subscriber output" → PTY pump iterates `Session.subs` and non-blocking-sends to each subscriber `out` channel. If the channel is full, the slow subscriber is canceled; the session continues for the rest.
+- "List files" → resolve configured root, clean requested path, resolve symlinks, reject paths outside the root, return sorted directory entries.
+- "Read text file" → resolve path using the same rule, enforce `files.max_file_bytes`, reject binary/NUL content, decode UTF-8, UTF-16 BOM, or Shift_JIS.
 
 ## Validation Rules
 
 - Session create: `cols ∈ [1,500]`, `rows ∈ [1,200]`, `shell ∈ {auto, pwsh, powershell, cmd}` resolved to absolute paths against an allow-list (the relay rejects arbitrary executables to avoid auth-bypass into RCE-unrelated binaries). If the API request omits `shell`, the server currently defaults it to `pwsh`.
+- File roots: every configured root has non-empty `id`, `name`, and absolute `path`; ids are unique and cannot contain path separators. `files.max_file_bytes` must be > 0.
 - Profile add (mobile): `baseUrl` must start with `http://` or `https://` and parse as a URL; `lanBearer` is required for every mode and must be ≥ 16 chars; `cfClientId`/`cfClientSecret` must be non-empty when `authMode == bearerPlusServiceToken`.
 - Frame size: WebSocket inbound frames ≥ 1 MiB are rejected to prevent buffer-bloat attacks.
 
