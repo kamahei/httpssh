@@ -74,7 +74,7 @@ Place `upload-keystore.jks` at `mobile/android/app/upload-keystore.jks`.
    ```powershell
    cd relay
    go test ./...
-   go build -trimpath -o dist/httpssh-relay-windows-amd64.exe ./cmd/httpssh-relay
+   go build -trimpath -o dist/httpssh-relay.exe ./cmd/httpssh-relay
 
    cd ..\mobile
    flutter pub get
@@ -117,6 +117,7 @@ The hashes should match.
 ## Release Workflow Notes
 
 - The relay version is embedded with Go linker flags from the tag without the leading `v`.
+- Local relay builds normally use `relay/dist/httpssh-relay.exe`; the release workflow renames the uploaded relay asset to `httpssh-relay-windows-amd64-<tag>.exe`.
 - The APK filename is normalized by the workflow after `flutter build apk --release`.
 - The APK build number uses the GitHub Actions run number.
 - The workflow pins Flutter 3.24.5 to keep dependency resolution aligned with `pubspec.lock`.

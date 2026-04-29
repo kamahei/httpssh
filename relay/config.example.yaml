@@ -6,7 +6,9 @@
 # cloudflared in front of it.
 listen: "127.0.0.1:18822"
 
-# Default shell when a session-create request omits the `shell` field.
+# Shell resolver default for lower-level callers. The HTTP API currently
+# defaults an omitted session-create `shell` field to `pwsh`; clients should
+# send `auto` explicitly when they want pwsh-then-powershell fallback.
 # One of: auto | pwsh | powershell | cmd. `auto` prefers pwsh, falls back
 # to powershell.
 shell: "auto"

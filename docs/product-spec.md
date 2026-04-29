@@ -63,7 +63,7 @@ Deployment topology: the relay listens on `127.0.0.1:18822` and is fronted local
 
 ## Functional Requirements
 
-- FR-1: Relay spawns `pwsh.exe` if available, else `powershell.exe`. Shell selection is per session via the `shell` parameter.
+- FR-1: Relay supports per-session shell selection via the `shell` parameter. `auto` prefers `pwsh.exe` and falls back to `powershell.exe`; explicit `pwsh`, `powershell`, and `cmd` values resolve only that shell. If the API request omits `shell`, the current server default is `pwsh`.
 - FR-2: Relay implements `GET /api/sessions`, `POST /api/sessions`, `DELETE /api/sessions/{id}`, `PATCH /api/sessions/{id}` (rename), `GET /api/health`.
 - FR-3: Relay implements `GET /api/sessions/{id}/io` as a WebSocket endpoint speaking the protocol defined in `docs/protocol.md`.
 - FR-4: On WebSocket attach, relay sends a single `replay` frame containing the most recent N bytes of scrollback (default 4 MiB), then transitions to live streaming.
@@ -77,15 +77,15 @@ Deployment topology: the relay listens on `127.0.0.1:18822` and is fronted local
 - FR-12: Mobile app supports automatic reconnect with exponential backoff (1s, 2s, 5s, 10s, 30s cap) on WebSocket close.
 - FR-13: Mobile app UI is localized to English and Japanese using ARB files.
 - FR-14: Web client supports the same session list, create, attach, resize, multi-tab UX as the mobile app for testing.
-- FR-15: Relay logs every authentication outcome (allowed/denied) at INFO level with the source path (LAN bearer vs Cloudflare).
+- FR-15: Relay logs denied authentication attempts at WARN level with the request path and remote address. Allowed authentication decisions are logged at DEBUG level; completed HTTP requests are logged at INFO level.
 
 ## Non-Functional Requirements
 
 - Performance: First byte from `GET /api/health` over LAN under 50 ms. Round-trip keystroke→echo over Cloudflare Tunnel under 250 ms over typical home internet.
 - Reliability: Session must survive a client TCP RST and a 60-second client outage without dropping the shell.
 - Scale: Up to 10 concurrent sessions on a single relay; up to 4 simultaneous WebSocket subscribers per session. No clustering.
-- Security: External access requires a Cloudflare Access policy match (Service Token or email/Google). LAN access requires the bearer token. Bearer token is at least 32 bytes of crypto-random data, hex-encoded.
-- Operability: Relay logs to stdout (captured by the Windows service wrapper) at INFO by default; supports `--log-level=debug` and a config option.
+- Security: External access requires a Cloudflare Access policy match (Service Token or email/Google). LAN access requires the bearer token. Configured bearer tokens must be at least 16 characters; 32+ random hex characters are recommended, and the relay's interactive generated bearer uses 32 random bytes encoded as hex.
+- Operability: Relay logs JSON to stdout at INFO by default and supports `--log-level=debug` plus a config option. The current Windows service wrapper does not configure a dedicated Event Log sink.
 - Portability: Relay builds with `GOOS=windows GOARCH=amd64`. Flutter app builds for `android` and `ios` from the same code base.
 - Distribution: GitHub Releases publish the Windows x64 relay `.exe` and a signed Android `.apk` with SHA-256 checksum files.
 - Privacy: No telemetry; no third-party analytics.

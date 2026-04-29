@@ -1,10 +1,10 @@
 # Wire Protocol (`httpssh.v1`)
 
-The WebSocket endpoint at `/api/sessions/{id}/io` carries terminal I/O between client and relay. Frames are JSON text frames (UTF-8). All frames have a `t` (type) field. Unknown types are ignored by the receiver but logged.
+The WebSocket endpoint at `/api/sessions/{id}/io` carries terminal I/O between client and relay. Frames are JSON text frames (UTF-8). All frames have a `t` (type) field. Unknown client frame types are ignored by the relay for forward compatibility.
 
 ## Subprotocol Negotiation
 
-Client requests `Sec-WebSocket-Protocol: httpssh.v1`. Relay must echo `httpssh.v1` in the upgrade response. If the client does not request this subprotocol, the relay closes with code `1002` (protocol error).
+Client requests `Sec-WebSocket-Protocol: httpssh.v1`. Relay must echo `httpssh.v1` in the upgrade response. If the client does not request this subprotocol, the current relay accepts the upgrade without a negotiated subprotocol and then closes it with policy violation code `1008`.
 
 ## Frame Types
 
@@ -28,7 +28,7 @@ Live output from the PTY.
 { "t": "out", "d": "<utf-8 chunk>" }
 ```
 
-The relay batches PTY reads with a small coalescing window (≤ 16 ms) to reduce frame count. Per-frame payload is capped at 64 KiB; larger reads are split into multiple frames.
+The relay currently sends one `out` frame per PTY read, with a 32 KiB read buffer. It does not coalesce output frames.
 
 #### `exit`
 
@@ -51,10 +51,10 @@ Reply to a client `ping`.
 Out-of-band error notification (does not necessarily close the WS).
 
 ```json
-{ "t": "error", "code": "<machine_code>", "message": "<human>" }
+{ "t": "error", "message": "<human>" }
 ```
 
-Codes: `pty_write_failed`, `resize_rejected`, `frame_too_large`, `internal`.
+The current relay sends this for rejected `resize` requests. It does not include a machine-readable error code in the frame.
 
 ### Client → Server
 
@@ -91,7 +91,7 @@ Heartbeat. The relay replies with `pong`. Clients should send `ping` every 20 se
 1. The first frame after upgrade is always one server `replay`.
 2. The relay never sends `out` before `replay`.
 3. The relay never re-sends `replay` on the same WebSocket; reconnection requires a fresh WebSocket.
-4. The relay must coalesce at most 16 ms of PTY output into a single `out` frame and never produce empty `out` frames.
+4. The relay sends PTY output as non-empty `out` frames as reads arrive.
 5. The client must process `replay` before any user input is sent.
 
 ## Multi-Subscriber Semantics
@@ -99,7 +99,7 @@ Heartbeat. The relay replies with `pong`. Clients should send `ping` every 20 se
 - Multiple WebSockets may attach to the same session simultaneously (e.g., the same user on phone and laptop).
 - All subscribers receive the same `out` stream after their own `replay`.
 - Inputs from any subscriber are merged into a single PTY input stream in the order received.
-- If one subscriber's output buffer fills (default 256 frames pending), the relay closes that subscriber's WS with `4503` and continues serving the others.
+- If one subscriber's output buffer fills (default 256 frames pending), the relay cancels that subscriber and continues serving the others. The current implementation does not use a custom close code for this path.
 
 ## Disconnect and Replay
 
@@ -110,14 +110,14 @@ When a WebSocket closes (any reason), the session continues running server-side.
 
 ## Heartbeat and Timeouts
 
-- Server idle timeout (no inbound frames for 90 s): server sends `ping`; if no `pong` in 30 s, server closes with `1001` (going away).
-- Client should send `ping` every 20 s when otherwise idle.
-- Cloudflare Tunnel idle WS timeout is 100 s; the 20 s client-side ping keeps it open.
+- The relay replies to client `ping` frames with `pong`.
+- The first-party mobile and web clients send `ping` every 20 seconds while the WebSocket is open.
+- The current relay does not run a separate server-side WebSocket ping timeout. Client-side ping is used to keep Cloudflare Tunnel and intermediate network devices from closing idle WebSockets.
 
 ## Example Session
 
 ```text
-C → S    GET /api/sessions/01HXY.../io  Upgrade: websocket  Sec-WebSocket-Protocol: httpssh.v1
+C → S    GET /api/sessions/4f3c2a1d9e8b7c6a554433221100ffee/io  Upgrade: websocket  Sec-WebSocket-Protocol: httpssh.v1
 S → C    101 Switching Protocols  Sec-WebSocket-Protocol: httpssh.v1
 S → C    {"t":"replay","d":"PS C:\\Users\\Owner> "}
 C → S    {"t":"resize","c":120,"r":40}
@@ -127,7 +127,7 @@ C → S    {"t":"ping"}
 S → C    {"t":"pong"}
 ... time passes ... C disconnects
 ... S keeps PTY alive, scrollback continues to fill ...
-C → S    GET /api/sessions/01HXY.../io  Upgrade: websocket  ...
+C → S    GET /api/sessions/4f3c2a1d9e8b7c6a554433221100ffee/io  Upgrade: websocket  ...
 S → C    {"t":"replay","d":"<recent buffer including missed output>"}
 ```
 

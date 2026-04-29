@@ -26,11 +26,11 @@ This document covers the two GUI surfaces: the Flutter mobile app and the embedd
 Profile editor modal fields:
 - Name (text).
 - Base URL (text, validated as `http(s)://...`).
-- Auth mode (segmented: `LAN bearer` / `Cloudflare Service Token` / `Cloudflare browser cookie`).
+- Auth mode (segmented: `LAN bearer` / `Cloudflare Service Token` / `Cloudflare browser SSO`).
 - Conditional fields:
   - LAN: Bearer (password input).
   - Service Token: Client ID + Client Secret (password inputs).
-  - Browser cookie: no extra fields; the app opens a system browser session via `flutter_web_auth_2`.
+  - Browser SSO: no extra fields; the app opens an in-app browser session and captures the Cloudflare Access cookie from the webview cookie jar.
 - Save button (disabled until valid).
 
 #### 2. Sessions Screen
@@ -145,11 +145,11 @@ English-only. This is a developer/admin tool, and the user accepted that the mob
 
 ### Behaviors
 
-- On load: probe `GET /api/health`. If 401 with a Cloudflare login redirect, follow it; otherwise show a login form for LAN bearer (stored in localStorage as `httpssh.lanBearer`).
+- On load: poll `GET /api/sessions` immediately. If the bearer is missing or wrong, show a status banner; the user opens Settings and stores the LAN bearer in localStorage as `httpssh.lanBearer`.
 - Sessions panel: refreshes every 5 s; click to open in a new tab.
-- New tab button creates a session via `POST /api/sessions` with current viewport dimensions, then opens the WS.
+- New button creates a `pwsh` session via `POST /api/sessions`, then opens the WS.
 - Tabs use `@xterm/addon-fit` to size the terminal to the container.
-- Settings modal: bearer override (LAN mode), service token override (developer mode for testing Policy A), reset.
+- Settings modal: LAN bearer and optional Cloudflare Service Token override for developer/testing mode.
 - Disconnect handling: same banner as the mobile app; auto-reconnect with backoff.
 
 ### Build
@@ -161,5 +161,5 @@ English-only. This is a developer/admin tool, and the user accepted that the mob
 ### Accessibility
 
 - Keyboard navigation throughout.
-- xterm.js `screenReaderMode` toggle in settings.
+- xterm.js is used for terminal rendering; no screen-reader-specific setting is currently exposed.
 - Sufficient color contrast in both light and dark themes.

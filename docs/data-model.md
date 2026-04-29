@@ -7,7 +7,7 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
 ### `Session`
 
 - Purpose: A live PowerShell process attached to a ConPTY, with subscribers and a scrollback buffer.
-- Identifier: `ID` — a 26-character Crockford-encoded ULID generated at creation.
+- Identifier: `ID` — a 32-character lowercase hex string generated from 16 random bytes at creation.
 - Fields:
   - `ID string` — primary key inside the relay process.
   - `Title string` — display name; defaults to `"<shell> <yyyy-mm-dd HH:MM>"`; user can rename via `PATCH`.
@@ -18,7 +18,7 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `Pty *conpty.ConPty` — the pseudo-console handle.
   - `Cmd *exec.Cmd` — the spawned process.
   - `Scrollback *RingBuffer` — bounded byte buffer (default 4 MiB).
-  - `subs map[*WSConn]struct{}` — current WebSocket subscribers.
+  - `subs map[*subscriber]struct{}` — current WebSocket subscribers.
   - `mu sync.Mutex` — guards `subs` and `LastIO`.
 - Lifecycle:
   - `Created` (PTY+process running, 0 subs).
@@ -53,16 +53,15 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `mu sync.RWMutex`.
   - `idleTimeout time.Duration`.
   - `scrollbackBytes int`.
-  - `shellResolver func() string` — chooses `pwsh.exe` if available, else `powershell.exe`.
-- Operations: `Create`, `Get`, `List`, `Rename`, `Resize`, `Kill`, `Reap` (background goroutine that kills idle sessions on a 60-second tick).
+  - `shellResolver func(name string) (string, error)` — resolves `auto`, `pwsh`, `powershell`, or `cmd` to an executable path.
+- Operations: `Create`, `Get`, `List`, `Rename`, `Kill`, `Shutdown`, and background reaping on the configured `reap_interval`. Resizes are performed on the `Session` returned by `Get`.
 
-### `WSConn`
+### `subscriber`
 
 - Purpose: One WebSocket subscriber to a session.
 - Fields:
-  - `conn *websocket.Conn`.
-  - `sessID string`.
-  - `outCh chan []byte` — buffered (default 256) channel for outbound frames.
+  - `out chan ServerFrame` — buffered (default 256) channel for outbound frames.
+  - `ctx context.Context`.
   - `cancel context.CancelFunc`.
 - Lifecycle: created on `/api/sessions/{id}/io` upgrade, registered in `Session.subs`, removed on disconnect or write error.
 
@@ -96,21 +95,21 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
 
 ### Web Client (browser localStorage)
 
-- `lan_bearer` (LAN-only profile) — stored in localStorage; never sent to a Cloudflare-mode origin.
-- `cf_service_token_id` / `cf_service_token_secret` — for the manual Service Token testing mode (developer use only, off by default).
+- `httpssh.lanBearer` — stored in localStorage and sent as `Authorization: Bearer ...` on REST and `?token=...` on WebSocket connections for the current origin.
+- `httpssh.cfClientId` / `httpssh.cfClientSecret` — for the manual Service Token testing mode (developer use only, off by default).
 - Active session list comes from the server; not persisted client-side.
 
 ## Access Patterns
 
 - "List my sessions" → `Manager.List()` returns a snapshot (RLock + copy of metadata, no buffers).
-- "Attach to session X" → `Manager.Get(id)` then register a `WSConn`; one allocation of a `[]byte` snapshot of `Scrollback` for the replay frame.
+- "Attach to session X" → `Manager.Get(id)` then register a subscriber; one allocation of a `[]byte` snapshot of `Scrollback` for the replay frame.
 - "Send keystroke" → directly `conpty.Write(payload)`; no intermediate queueing.
 - "Reap idle sessions" → goroutine ranges `byID` under RLock, collects `Detached` sessions whose `LastIO` is older than `idleTimeout` minus current sub count == 0; upgrades to Lock to remove and `Kill`.
-- "Multi-subscriber output" → PTY pump iterates `Session.subs` and non-blocking-sends to each `outCh`. If a `outCh` is full, the slow subscriber's WS is closed (cannot keep up); the session continues for the rest.
+- "Multi-subscriber output" → PTY pump iterates `Session.subs` and non-blocking-sends to each subscriber `out` channel. If the channel is full, the slow subscriber is canceled; the session continues for the rest.
 
 ## Validation Rules
 
-- Session create: `cols ∈ [1,500]`, `rows ∈ [1,200]`, `shell ∈ {pwsh, powershell, cmd}` resolved to absolute paths against an allow-list (the relay rejects arbitrary executables to avoid auth-bypass into RCE-unrelated binaries).
+- Session create: `cols ∈ [1,500]`, `rows ∈ [1,200]`, `shell ∈ {auto, pwsh, powershell, cmd}` resolved to absolute paths against an allow-list (the relay rejects arbitrary executables to avoid auth-bypass into RCE-unrelated binaries). If the API request omits `shell`, the server currently defaults it to `pwsh`.
 - Profile add (mobile): `baseUrl` must start with `http://` or `https://` and parse as a URL; `lanBearer` is required for every mode and must be ≥ 16 chars; `cfClientId`/`cfClientSecret` must be non-empty when `authMode == bearerPlusServiceToken`.
 - Frame size: WebSocket inbound frames ≥ 1 MiB are rejected to prevent buffer-bloat attacks.
 

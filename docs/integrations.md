@@ -48,7 +48,7 @@
 
 ## Observability (Built-In, Not Third-Party)
 
-- Logs: `slog` JSON to stdout; Windows Service captures stdout into the Application Event Log.
+- Logs: `slog` JSON to stdout. The current Windows service wrapper does not configure a dedicated Event Log sink.
 - Metrics: not in v1. If needed later, expose `/api/metrics` (Prometheus text format) under the same auth.
 
 ## Build And Release Automation

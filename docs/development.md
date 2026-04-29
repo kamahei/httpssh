@@ -22,13 +22,19 @@ cd relay
 go mod tidy
 go test ./...
 go test -race ./...
-go build -trimpath -o dist/httpssh-relay-windows-amd64.exe ./cmd/httpssh-relay
+go build -trimpath -o dist/httpssh-relay.exe ./cmd/httpssh-relay
 ```
+
+With Task, `task build` writes `relay/httpssh-relay.exe` for the current
+OS/architecture and `task build-windows` writes `relay/dist/httpssh-relay.exe`
+for Windows x64. CI and GitHub Releases may use architecture/tag-qualified
+filenames for uploaded artifacts, but the local Task output is the shorter
+`dist/httpssh-relay.exe`.
 
 Run locally:
 
 ```powershell
-.\dist\httpssh-relay-windows-amd64.exe --listen 127.0.0.1:18822 --bearer "dev-bearer-32-chars-or-more-12345" --log-level debug
+.\dist\httpssh-relay.exe --listen 127.0.0.1:18822 --bearer "dev-bearer-32-chars-or-more-12345" --log-level debug
 ```
 
 Smoke test:

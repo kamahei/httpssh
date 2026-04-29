@@ -6,7 +6,7 @@ These criteria define "v1 done." They are the bar for declaring the project ship
 
 - AC-P1 — All artifacts in this repo are written in English (no Japanese in code, comments, docs, or commit messages).
 - AC-P2 — The Flutter app's UI strings are all routed through ARB files, with both `app_en.arb` and `app_ja.arb` populated for every key.
-- AC-P3 — `go build ./...` from `relay/` on Windows produces a single `httpssh-relay.exe`.
+- AC-P3 — `go test ./...` from `relay/` passes, and `go build -o dist/httpssh-relay.exe ./cmd/httpssh-relay` produces a single Windows relay binary.
 - AC-P4 — `flutter build apk --release` succeeds from `mobile/`; GitHub Release APK builds use the configured Android release signing secrets. `flutter build ios --release --no-codesign` succeeds on macOS.
 - AC-P5 — The relay binary embeds `relay/internal/server/webfs/` and serves the web client at `/web/`.
 
@@ -43,9 +43,9 @@ These criteria define "v1 done." They are the bar for declaring the project ship
 
 ## Cloudflare End-to-End
 
-- AC-C1 — `https://pwsh.<domain>/api/health` with valid Service Token headers returns 200.
+- AC-C1 — `https://pwsh.<domain>/api/health` with valid Service Token headers and the relay LAN bearer returns 200.
 - AC-C2 — `https://pwsh.<domain>/web/` opens in a fresh browser, completes Google login as the allow-listed email, and renders the SPA.
-- AC-C3 — A WebSocket through Cloudflare with valid Service Token headers establishes successfully and survives a 60 s idle period (kept alive by the client's 20 s ping).
+- AC-C3 — A WebSocket through Cloudflare with the relay LAN bearer plus any required Cloudflare edge credential establishes successfully and survives a 60 s idle period (kept alive by the client's 20 s ping).
 
 ## Mobile (Functional)
 
@@ -66,7 +66,7 @@ These criteria define "v1 done." They are the bar for declaring the project ship
 
 ## Web Client
 
-- AC-W1 — `/web/index.html` loads after auth, lists sessions, and opens the existing or a new session in a tab.
+- AC-W1 — `/web/index.html` loads without relay bearer auth, then lists sessions and opens an existing or new session in a tab after the LAN bearer is saved in Settings.
 - AC-W2 — Resizing the browser window resizes the terminal via the fit addon and sends a `resize` frame.
-- AC-W3 — Reloading the page re-creates the same profiles list from localStorage.
-- AC-W4 — Closing the browser and reopening it re-attaches successfully.
+- AC-W3 — Reloading the page preserves the LAN bearer and optional developer Service Token values from localStorage.
+- AC-W4 — Closing the browser and reopening it lists server-side sessions after auth; clicking a session re-attaches successfully.

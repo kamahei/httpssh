@@ -52,15 +52,9 @@ Both should be `Running`. Restart with `Restart-Service <name>`.
 
 ### Tail relay logs
 
-The Windows service captures stdout into the Application Event Log. Quick filter:
-
-```powershell
-Get-WinEvent -LogName Application -MaxEvents 50 |
-  Where-Object { $_.ProviderName -match 'httpssh-relay' } |
-  Format-List TimeCreated, LevelDisplayName, Message
-```
-
-In foreground/dev mode, the relay logs to stdout as JSON. Useful jq filters:
+The relay logs JSON to stdout. The current Windows service wrapper does not
+configure a dedicated Event Log sink, so use foreground/dev mode when you need
+live structured logs:
 
 ```powershell
 .\httpssh-relay.exe --config config.yaml |
@@ -88,7 +82,7 @@ The tunnel stays registered across upgrades; only the connector binary changes.
 
 ```powershell
 Stop-Service httpssh-relay
-Copy-Item .\dist\httpssh-relay.exe "C:\Program Files\httpssh\httpssh-relay.exe" -Force
+Copy-Item .\relay\dist\httpssh-relay.exe "C:\Program Files\httpssh\httpssh-relay.exe" -Force
 Start-Service httpssh-relay
 ```
 
@@ -101,7 +95,7 @@ Open WebSockets break across a restart. Sessions are in-memory only and are lost
 3. `Restart-Service httpssh-relay`.
 4. Update every LAN profile in the mobile app and the LAN bearer in the web client's Settings dialog.
 
-The LAN bearer never leaves the host filesystem and the device that uses it. The web client and the mobile app keep it in OS-level secret storage.
+The LAN bearer never leaves the host filesystem and the device or browser origin that uses it. The mobile app stores it in OS-level secure storage; the web client stores it in that origin's localStorage.
 
 ### Rotate the Cloudflare Service Token
 
@@ -135,7 +129,7 @@ The change applies to new browser logins; existing sessions stay valid until the
 | `401 unauthorized` JSON from the relay (browser, app, or curl) | LAN bearer missing or wrong | Verify the bearer used by the client matches `config.yaml` `auth.lan_bearer` |
 | Cloudflare login page returned (302) when curl-ing | Service Token rotated or wrong / not sent at all | Refresh the Service Token; verify `CF-Access-Client-Id` and `CF-Access-Client-Secret` are both attached |
 | Browser SPA loads but `/api/*` 401s | Bearer not in the Settings dialog yet, or wrong | Open Settings, paste the LAN bearer, Save; refresh the page |
-| WebSocket immediately closes with code 1002 | Client did not negotiate the `httpssh.v1` subprotocol | The first-party clients always do; if hitting from a custom client, add `Sec-WebSocket-Protocol: httpssh.v1` |
+| WebSocket immediately closes with code 1008 | Client did not negotiate the `httpssh.v1` subprotocol | The first-party clients always do; if hitting from a custom client, add `Sec-WebSocket-Protocol: httpssh.v1` |
 | Sessions disappear after a Windows reboot | Expected — sessions are in-memory only | Persistent sessions are out of scope for v1; see [Data model](data-model.md). |
 | Relay starts but logs `listen failed bind: address already in use` | Some other process owns 18822 | `Get-NetTCPConnection -LocalPort 18822`; either stop that process or change `listen` |
 

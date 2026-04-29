@@ -55,7 +55,7 @@ httpssh/
 - **`httpssh-relay` (Windows service)**: HTTP server, WebSocket upgrader, session manager, ConPTY supervisor, embedded web file server, auth middleware. Single process; single binary.
 - **`cloudflared` (Windows service)**: Cloudflare Tunnel daemon. Mapped: `pwsh.<domain>` → `http://127.0.0.1:18822`. Independent process.
 - **Mobile app**: Flutter app on Android and iOS. Holds connection profiles in secure storage; opens one WebSocket per active session tab.
-- **Web client**: Embedded browser SPA served at `/web/`. Used for testing, browser/Google OAuth login flow, and admin operations (create, attach, kill, rename as supported by the API).
+- **Web client**: Embedded browser SPA served at `/web/`. Used for testing, browser/Google OAuth login flow, and admin operations that the current UI exposes (list, create, attach, kill).
 
 ## Responsibilities And Boundaries
 
@@ -107,7 +107,7 @@ Cross-layer rule: lower layers must not import higher layers. `conpty` must not 
 - WebSocket: `/api/sessions/{id}/io`.
 - Static: `/web/*`.
 - Cloudflare Tunnel: `pwsh.<domain>` → `http://127.0.0.1:18822`.
-- Filesystem: `config.yaml` (read), Windows Event Log (write via service framework, INFO/ERROR).
+- Filesystem: `config.yaml` (read). Logs are written as JSON to stdout; the current service wrapper does not install a dedicated Windows Event Log sink.
 
 ## Key Tradeoffs
 

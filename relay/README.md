@@ -26,6 +26,9 @@ If you prefer Task:
 task build
 ```
 
+`task build` writes `httpssh-relay.exe` in this directory. `task build-windows`
+cross-builds Windows x64 to `dist/httpssh-relay.exe`.
+
 ## Running
 
 Foreground, with a stable bearer token:
@@ -67,11 +70,13 @@ curl http://127.0.0.1:18822/api/health -H "Authorization: Bearer <your-bearer>"
 
 | Flag | Default | Purpose |
 |---|---|---|
+| `--config` | _(none)_ | path to `config.yaml`; flags override config values |
 | `--listen` | `127.0.0.1:18822` | host:port to listen on |
-| `--bearer` | _(random)_ | LAN bearer token; also reads `$HTTPSSH_BEARER` |
+| `--bearer` | _(random)_ | LAN bearer token |
 | `--idle-timeout` | `24h` | kill an idle session after this long |
 | `--scrollback-bytes` | `4194304` | per-session scrollback ring size |
 | `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
+| `--shell` | `auto` | shell resolver default for lower-level callers; HTTP session-create currently defaults an omitted `shell` field to `pwsh` |
 
 ## Tests
 

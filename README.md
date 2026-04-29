@@ -23,20 +23,21 @@ The static web client at `/web/` is intentionally loadable without the bearer so
 1. Download the latest Release assets:
    - `httpssh-relay-windows-amd64-<tag>.exe`
    - `httpssh-mobile-android-<tag>.apk`
-2. Copy `relay/config.example.yaml` to `config.yaml` on the Windows host and set a long `auth.lan_bearer`.
-3. Start the relay:
+2. Copy the relay exe to the Windows host as `httpssh-relay.exe`.
+3. Copy `relay/config.example.yaml` to `config.yaml` on the Windows host and set a long `auth.lan_bearer`.
+4. Start the relay:
 
    ```powershell
    .\httpssh-relay.exe --config .\config.yaml
    ```
 
-4. Open the browser test client:
+5. Open the browser test client:
 
    ```text
    http://127.0.0.1:18822/web/
    ```
 
-5. Paste the LAN bearer in Settings, create a session, and run a smoke command such as `Get-Date`.
+6. Paste the LAN bearer in Settings, create a session, and run a smoke command such as `Get-Date`.
 
 For service installation, mobile setup, and Cloudflare setup, see the [user manual](docs/user-manual.md).
 
@@ -79,7 +80,7 @@ Relay:
 ```powershell
 cd relay
 go test ./...
-go build -trimpath -o dist/httpssh-relay-windows-amd64.exe ./cmd/httpssh-relay
+go build -trimpath -o dist/httpssh-relay.exe ./cmd/httpssh-relay
 ```
 
 Mobile:
