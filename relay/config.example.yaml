@@ -1,0 +1,37 @@
+# httpssh-relay configuration. Copy to config.yaml and edit. CLI flags
+# always take precedence over values set here.
+
+# host:port to listen on. 127.0.0.1 is local-only; bind to a LAN address
+# (e.g. 192.168.1.20:18822) to expose over LAN, or keep loopback and put
+# cloudflared in front of it.
+listen: "127.0.0.1:18822"
+
+# Default shell when a session-create request omits the `shell` field.
+# One of: auto | pwsh | powershell | cmd. `auto` prefers pwsh, falls back
+# to powershell.
+shell: "auto"
+
+auth:
+  # Shared bearer required on EVERY request (REST `Authorization: Bearer
+  # <value>` and WebSocket `?token=<value>`). Generate a long random
+  # value (32+ hex chars). Empty disables the relay entirely.
+  #
+  # Cloudflare Access is treated as an outer edge layer only: it
+  # enforces identity (Service Token for the mobile app, Google SSO for
+  # the browser) before the request reaches the relay. The relay still
+  # checks this bearer regardless of how the request arrived.
+  lan_bearer: ""
+
+session:
+  # Kill a session after this long with zero subscribers and no I/O.
+  idle_timeout: "24h"
+
+  # Per-session scrollback ring buffer.
+  scrollback_bytes: 4194304
+
+  # How often the GC goroutine looks for stale sessions.
+  reap_interval: "60s"
+
+log:
+  # debug | info | warn | error
+  level: "info"

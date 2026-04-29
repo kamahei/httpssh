@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>httpssh — test client</title>
+  <link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>httpssh</h1>
+    <span id="origin"></span>
+    <button id="settings-btn" type="button">Settings</button>
+    <button id="new-btn" type="button">+ New</button>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <h2>Sessions</h2>
+      <ul id="session-list"></ul>
+    </aside>
+
+    <section id="workspace">
+      <div id="tabs"></div>
+      <div id="terminal-container"></div>
+      <div id="status-banner" hidden></div>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h2>Settings</h2>
+
+      <label>
+        LAN bearer
+        <input type="password" id="lan-bearer" autocomplete="off" />
+      </label>
+      <p class="hint">Sent as <code>Authorization: Bearer &lt;value&gt;</code> on REST and as <code>?token=</code> on the WebSocket. Required for LAN and Cloudflare Access connections.</p>
+
+      <details>
+        <summary>Cloudflare Service Token (developer/test mode)</summary>
+        <label>
+          CF-Access-Client-Id
+          <input type="text" id="cf-id" autocomplete="off" />
+        </label>
+        <label>
+          CF-Access-Client-Secret
+          <input type="password" id="cf-secret" autocomplete="off" />
+        </label>
+        <p class="hint">Browsers cannot normally send these on cross-origin requests; useful only for direct, same-origin development.</p>
+      </details>
+
+      <menu>
+        <button type="button" id="save-settings">Save</button>
+        <button type="button" id="close-settings">Cancel</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://unpkg.com/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  relay:
+    name: Relay
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+
+      - name: Test relay
+        working-directory: relay
+        run: go test ./...
+
+      - name: Build relay
+        working-directory: relay
+        run: go build -trimpath -o dist/httpssh-relay-windows-amd64.exe ./cmd/httpssh-relay
+
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/app/*.gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyze Flutter app
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Test Flutter app
+        working-directory: mobile
+        run: flutter test

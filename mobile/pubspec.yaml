@@ -1,0 +1,55 @@
+name: httpssh_mobile
+description: Mobile terminal client for httpssh-relay (Android, iOS).
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.19.0
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # HTTP + WebSocket
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.1
+
+  # Terminal emulator widget
+  xterm: ^4.0.0
+
+  # Secure storage for bearers / service tokens
+  flutter_secure_storage: ^9.2.2
+
+  # Generic prefs for non-secret state
+  shared_preferences: ^2.3.2
+
+  # JSON / serialization
+  json_annotation: ^4.9.0
+
+  # UUID for profile ids
+  uuid: ^4.5.1
+
+  # In-app browser used to capture the Cloudflare Access SSO cookie.
+  # We use flutter_inappwebview rather than flutter_web_auth_2 because the
+  # Cloudflare Access flow does not redirect to a custom URI scheme; it
+  # sets an HttpOnly cookie that we must read from the webview's cookie
+  # jar after the protected URL loads successfully.
+  flutter_inappwebview: ^6.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true
+  generate: true

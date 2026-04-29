@@ -1,0 +1,70 @@
+# Editor / OS
+.vscode/
+.idea/
+.claude/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Go
+relay/httpssh-relay
+relay/httpssh-relay.exe
+relay/httpssh-relay.exe~
+relay/httpssh-relay-*.exe
+relay/dist/
+relay/coverage.out
+relay/coverage.html
+
+# Web client (future TS pipeline)
+relay/web/node_modules/
+relay/web/dist/
+
+# Flutter
+mobile/.dart_tool/
+mobile/.packages
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.idea/
+mobile/.gradle/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/Flutter.framework
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/ios/Runner/GoogleService-Info.plist
+mobile/lib/l10n/generated/
+
+# Flutter generated app artifacts that should not be committed
+mobile/android/.gradle/
+mobile/android/captures/
+mobile/android/.cxx/
+mobile/android/app/build/
+mobile/android/app/release/
+mobile/android/local.properties
+mobile/android/key.properties
+mobile/android/*.iml
+mobile/android/app/*.iml
+mobile/*.iml
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.metadata
+
+# Local config with secrets
+relay/config.yaml
+*.local.yaml
+*.local.yml
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+*.mobileprovision
+
+# Logs
+*.log

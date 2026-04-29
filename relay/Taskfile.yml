@@ -1,0 +1,71 @@
+version: '3'
+
+# Task runner for the relay. Install once:
+#   winget install Task.Task
+# or:
+#   go install github.com/go-task/task/v3/cmd/task@latest
+#
+# Tasks are designed for a Windows host but should also work from a POSIX
+# shell as long as Go is on PATH.
+
+vars:
+  BIN: httpssh-relay
+  PKG: ./...
+
+tasks:
+  default:
+    desc: Show task list
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the relay binary for the current OS/arch
+    cmds:
+      - go build -o {{.BIN}}.exe ./cmd/httpssh-relay
+
+  build-windows:
+    desc: Cross-build the relay for Windows x64
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go build -o dist/{{.BIN}}.exe ./cmd/httpssh-relay
+
+  run:
+    desc: Run the relay locally
+    cmds:
+      - go run ./cmd/httpssh-relay --log-level=debug
+
+  test:
+    desc: Run the test suite with the race detector
+    cmds:
+      - go test -race -count=1 {{.PKG}}
+
+  cover:
+    desc: Run tests and emit a coverage report
+    cmds:
+      - go test -race -count=1 -coverprofile=coverage.out {{.PKG}}
+      - go tool cover -html=coverage.out -o coverage.html
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet {{.PKG}}
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  tidy:
+    desc: Tidy and verify go.mod / go.sum
+    cmds:
+      - go mod tidy
+      - go mod verify
+
+  ci:
+    desc: Pre-commit gate (vet + lint + test)
+    cmds:
+      - task: vet
+      - task: lint
+      - task: test

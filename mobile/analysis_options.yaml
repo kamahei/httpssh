@@ -1,0 +1,14 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "lib/l10n/generated/**"
+  errors:
+    invalid_annotation_target: ignore
+
+linter:
+  rules:
+    - prefer_const_constructors
+    - prefer_const_literals_to_create_immutables
+    - require_trailing_commas
+    - sort_child_properties_last

@@ -1,0 +1,153 @@
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans", sans-serif;
+  background: #1a1a1a;
+  color: #e6e6e6;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: #111;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+header #origin { opacity: 0.6; font-size: 0.85rem; flex: 1; }
+header button { background: #2a2a2a; color: inherit; border: 1px solid #3a3a3a; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; }
+header button:hover { background: #353535; }
+
+main {
+  display: flex;
+  height: calc(100vh - 50px);
+}
+
+#sidebar {
+  width: 240px;
+  border-right: 1px solid #2a2a2a;
+  padding: 0.5rem 0;
+  overflow-y: auto;
+}
+
+#sidebar h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 1rem 0.5rem;
+  opacity: 0.6;
+}
+
+#session-list { list-style: none; margin: 0; padding: 0; }
+#session-list li { padding: 0.5rem 1rem; cursor: pointer; border-left: 3px solid transparent; font-size: 0.9rem; }
+#session-list li:hover { background: #222; }
+#session-list li.active { border-left-color: #4a90e2; background: #1f2a3a; }
+#session-list li .meta { font-size: 0.75rem; opacity: 0.5; }
+#session-list li .kill { float: right; opacity: 0.4; }
+#session-list li .kill:hover { opacity: 1; color: #e26d6d; }
+
+#workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px 4px 0;
+  background: #111;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.tab.active { background: #1e1e1e; border-color: #4a90e2; }
+.tab .dot { width: 8px; height: 8px; border-radius: 50%; background: #5cb85c; }
+.tab .dot.reconnecting { background: #f0ad4e; }
+.tab .dot.closed { background: #d9534f; }
+.tab .close { opacity: 0.5; }
+.tab .close:hover { opacity: 1; }
+
+#terminal-container {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+#terminal-container .xterm-host {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+#terminal-container .xterm-host.active { display: block; }
+
+#status-banner {
+  padding: 0.5rem 1rem;
+  background: #f0ad4e;
+  color: #111;
+  font-size: 0.85rem;
+}
+
+dialog {
+  background: #1f1f1f;
+  color: inherit;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 1.25rem;
+  min-width: 400px;
+}
+dialog::backdrop { background: rgba(0,0,0,0.6); }
+dialog h2 { margin-top: 0; }
+dialog label { display: block; margin: 0.6rem 0; font-size: 0.85rem; }
+dialog input { display: block; width: 100%; margin-top: 0.25rem; padding: 0.4rem; background: #111; color: inherit; border: 1px solid #3a3a3a; border-radius: 4px; font-family: inherit; }
+dialog .hint { font-size: 0.75rem; opacity: 0.6; margin: 0.25rem 0 0.5rem; }
+dialog menu { display: flex; gap: 0.5rem; justify-content: flex-end; padding: 0; margin: 1rem 0 0; }
+dialog menu button { background: #2a2a2a; color: inherit; border: 1px solid #3a3a3a; padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; }
+dialog menu button:hover { background: #353535; }
+
+#reauth-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+#reauth-overlay.visible { display: flex; }
+#reauth-overlay > div {
+  background: #1f1f1f;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 2rem;
+  max-width: 480px;
+  text-align: center;
+}
+#reauth-overlay h2 { margin-top: 0; }
+#reauth-overlay p { opacity: 0.85; }
+#reauth-overlay button {
+  margin-top: 1rem;
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+  background: #4a90e2;
+  color: white;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#reauth-overlay button:hover { background: #5aa0f2; }

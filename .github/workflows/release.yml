@@ -1,0 +1,170 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "A release tag is required."
+          }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$') {
+            throw "Release tags must look like v0.1.0 or v0.1.0-beta.1."
+          }
+
+          git fetch --tags --force
+          git rev-parse "$tag^{commit}" | Out-Null
+          git checkout --detach $tag
+
+          $version = $tag.Substring(1)
+          "TAG_NAME=$tag" >> $env:GITHUB_ENV
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+
+      - name: Test relay
+        working-directory: relay
+        run: go test ./...
+
+      - name: Build relay exe
+        shell: pwsh
+        working-directory: relay
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = "httpssh-relay-windows-amd64-$env:TAG_NAME.exe"
+          go build -trimpath -ldflags "-s -w -X main.version=$env:VERSION" -o "dist/$exe" ./cmd/httpssh-relay
+          $hash = (Get-FileHash "dist/$exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $exe" | Set-Content "dist/$exe.sha256" -NoNewline
+          "RELAY_EXE=relay/dist/$exe" >> $env:GITHUB_ENV
+          "RELAY_SHA=relay/dist/$exe.sha256" >> $env:GITHUB_ENV
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+            mobile/android/app/*.gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Configure Android release signing
+        shell: pwsh
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          $required = @(
+            "ANDROID_KEYSTORE_BASE64",
+            "ANDROID_KEYSTORE_PASSWORD",
+            "ANDROID_KEY_ALIAS",
+            "ANDROID_KEY_PASSWORD"
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing GitHub secret: $name. See docs/release.md."
+            }
+          }
+
+          [IO.File]::WriteAllBytes(
+            "$env:GITHUB_WORKSPACE\mobile\android\app\upload-keystore.jks",
+            [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64)
+          )
+
+          $keyProperties = @"
+          storeFile=upload-keystore.jks
+          storePassword=$env:ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$env:ANDROID_KEY_ALIAS
+          keyPassword=$env:ANDROID_KEY_PASSWORD
+          "@
+          $keyProperties.Trim() | Set-Content "$env:GITHUB_WORKSPACE\mobile\android\key.properties" -NoNewline
+
+      - name: Install Flutter dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Analyze Flutter app
+        working-directory: mobile
+        run: flutter analyze
+
+      - name: Test Flutter app
+        working-directory: mobile
+        run: flutter test
+
+      - name: Build Android APK
+        shell: pwsh
+        working-directory: mobile
+        run: |
+          flutter build apk --release --build-name "$env:VERSION" --build-number "${{ github.run_number }}"
+          $apk = "httpssh-mobile-android-$env:TAG_NAME.apk"
+          Copy-Item "build/app/outputs/flutter-apk/app-release.apk" "build/app/outputs/flutter-apk/$apk" -Force
+          $hash = (Get-FileHash "build/app/outputs/flutter-apk/$apk" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $apk" | Set-Content "build/app/outputs/flutter-apk/$apk.sha256" -NoNewline
+          "MOBILE_APK=mobile/build/app/outputs/flutter-apk/$apk" >> $env:GITHUB_ENV
+          "MOBILE_SHA=mobile/build/app/outputs/flutter-apk/$apk.sha256" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            $env:RELAY_EXE,
+            $env:RELAY_SHA,
+            $env:MOBILE_APK,
+            $env:MOBILE_SHA
+          )
+
+          $notesPath = "release-notes.md"
+          $releaseNotes = @"
+          Automated release for $env:TAG_NAME.
+
+          Assets:
+          - $(Split-Path $env:RELAY_EXE -Leaf)
+          - $(Split-Path $env:MOBILE_APK -Leaf)
+          - SHA-256 checksum files for both artifacts.
+          "@
+          $releaseNotes.Trim() | Set-Content $notesPath
+
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG_NAME $assets --clobber
+          } else {
+            gh release create $env:TAG_NAME $assets --title $env:TAG_NAME --notes-file $notesPath
+          }
