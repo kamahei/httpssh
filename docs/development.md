@@ -41,7 +41,9 @@ pwsh -File relay/scripts/smoke.ps1
 
 Requirements:
 
-- Flutter 3.22 or later.
+- Flutter 3.24.5. CI pins this version so `pubspec.lock` and the
+  Flutter SDK-provided `flutter_localizations` dependency resolve
+  reproducibly.
 - Android Studio and Android SDK for APK builds.
 - macOS and Xcode for iOS builds.
 

@@ -118,5 +118,6 @@ The hashes should match.
 - The relay version is embedded with Go linker flags from the tag without the leading `v`.
 - The APK filename is normalized by the workflow after `flutter build apk --release`.
 - The APK build number uses the GitHub Actions run number.
+- The workflow pins Flutter 3.24.5 to keep dependency resolution aligned with `pubspec.lock`.
 - The workflow uses GitHub's built-in `GITHUB_TOKEN` through `gh release`.
 - iOS is not published by this workflow because iOS distribution requires Apple signing, provisioning, and a distribution channel such as TestFlight.
