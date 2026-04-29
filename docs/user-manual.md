@@ -21,7 +21,7 @@ This manual covers installing and using `httpssh` as a single-operator tool.
 
    ```powershell
    New-Item -ItemType Directory -Force C:\Program Files\httpssh
-   Copy-Item .\httpssh-relay-windows-amd64-v0.1.0.exe "C:\Program Files\httpssh\httpssh-relay.exe"
+   Copy-Item .\httpssh-relay-windows-amd64-v0.2.0.exe "C:\Program Files\httpssh\httpssh-relay.exe"
    ```
 
 3. Copy `relay/config.example.yaml` to `C:\Program Files\httpssh\config.yaml`.

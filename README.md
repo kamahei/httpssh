@@ -43,12 +43,12 @@ For service installation, mobile setup, and Cloudflare setup, see the [user manu
 
 ## Release Assets
 
-Tagged releases are built by GitHub Actions from tags like `v0.1.0`.
+Tagged releases are built by GitHub Actions from tags like `v0.2.0`.
 
 | Asset | Purpose |
 |---|---|
-| `httpssh-relay-windows-amd64-v0.1.0.exe` | Windows x64 relay binary |
-| `httpssh-mobile-android-v0.1.0.apk` | Signed Android APK |
+| `httpssh-relay-windows-amd64-v0.2.0.exe` | Windows x64 relay binary |
+| `httpssh-mobile-android-v0.2.0.apk` | Signed Android APK |
 | `*.sha256` | SHA-256 checksum for each binary |
 
 Maintainer release instructions are in [docs/release.md](docs/release.md).
