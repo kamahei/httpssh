@@ -78,6 +78,7 @@ Place `upload-keystore.jks` at `mobile/android/app/upload-keystore.jks`.
 
    cd ..\mobile
    flutter pub get
+   flutter gen-l10n
    flutter analyze
    flutter test
    flutter build apk --release
