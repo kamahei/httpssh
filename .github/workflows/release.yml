@@ -70,11 +70,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
-          cache-dependency-path: |
-            mobile/android/*.gradle
-            mobile/android/gradle/wrapper/gradle-wrapper.properties
-            mobile/android/app/*.gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

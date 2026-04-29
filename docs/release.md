@@ -121,5 +121,6 @@ The hashes should match.
 - The APK filename is normalized by the workflow after `flutter build apk --release`.
 - The APK build number uses the GitHub Actions run number.
 - The workflow pins Flutter 3.24.5 to keep dependency resolution aligned with `pubspec.lock`.
+- The release workflow does not use the `actions/setup-java` Gradle cache because Gradle lock files can make post-job cache archiving unreliable on Windows runners.
 - The workflow uses GitHub's built-in `GITHUB_TOKEN` through `gh release`.
 - iOS is not published by this workflow because iOS distribution requires Apple signing, provisioning, and a distribution channel such as TestFlight.
