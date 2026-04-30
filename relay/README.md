@@ -138,6 +138,25 @@ To uninstall the service and remove the copied files from
 scripts\uninstall-service.bat
 ```
 
+If the relay should inherit the signed-in user's environment instead of running
+as `LocalSystem`, install it as a current-user logon task:
+
+```bat
+scripts\install-logon-task.bat
+```
+
+This copies files to `%LOCALAPPDATA%\httpssh`, registers a hidden scheduled task
+named `httpssh-relay-logon`, and starts it immediately. Do not run this task and
+the `httpssh-relay` Windows service on the same `listen` address at the same
+time. Remove the task with:
+
+```bat
+scripts\uninstall-logon-task.bat
+```
+
+Pass `/remove-files` to the uninstall script if you also want to remove the
+copied files and logs from `%LOCALAPPDATA%\httpssh`.
+
 For the operational runbook (rotating tokens, revoking users, debugging
 401s), see [`docs/cloudflare-operations.md`](../docs/cloudflare-operations.md).
 

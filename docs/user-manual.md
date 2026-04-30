@@ -80,6 +80,44 @@ Uninstall:
 pwsh -File relay/scripts/uninstall-service.ps1
 ```
 
+## Install As A Per-User Logon Task
+
+Use a logon task when the relay should inherit the signed-in user's `PATH`,
+PowerShell profile, CLI credentials, SSH keys, and other user-scoped tools.
+This is useful for Microsoft accounts that cannot be used as a Windows service
+account with password logon. The relay starts only after that user logs on.
+
+From a normal Command Prompt or PowerShell in the repository checkout:
+
+```bat
+relay\scripts\install-logon-task.bat
+```
+
+To install from a downloaded release executable instead:
+
+```bat
+relay\scripts\install-logon-task.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.2.0.exe"
+```
+
+The script copies the relay and config to `%LOCALAPPDATA%\httpssh`, registers a
+current-user scheduled task named `httpssh-relay-logon`, starts it immediately,
+and uses a hidden launcher so no console window is shown at logon. Logs are
+written to `%LOCALAPPDATA%\httpssh\logs\httpssh-relay.log`.
+
+Do not run the Windows service and the logon task at the same time on the same
+`listen` address. Stop or uninstall `httpssh-relay` service before using the
+logon task.
+
+Uninstall:
+
+```bat
+relay\scripts\uninstall-logon-task.bat
+```
+
+By default this removes the task and stops the relay while keeping the copied
+config and logs. Use `relay\scripts\uninstall-logon-task.bat /remove-files` to
+remove `%LOCALAPPDATA%\httpssh` too.
+
 ## Use The Web Test Client
 
 Open:
