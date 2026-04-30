@@ -116,6 +116,28 @@ pwsh -File scripts/install-service.ps1   # elevated
 Start-Service httpssh-relay
 ```
 
+For a local build that already has `dist/httpssh-relay.exe` and `config.yaml`,
+an elevated Command Prompt or PowerShell can run:
+
+```bat
+scripts\install-service.bat
+```
+
+To install from a downloaded release executable instead, pass the executable
+path as the first argument. The script still copies `config.yaml` from the
+relay directory:
+
+```bat
+scripts\install-service.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.2.0.exe"
+```
+
+To uninstall the service and remove the copied files from
+`C:\Program Files\httpssh`, run:
+
+```bat
+scripts\uninstall-service.bat
+```
+
 For the operational runbook (rotating tokens, revoking users, debugging
 401s), see [`docs/cloudflare-operations.md`](../docs/cloudflare-operations.md).
 
