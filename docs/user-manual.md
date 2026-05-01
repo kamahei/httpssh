@@ -21,7 +21,7 @@ This manual covers installing and using `httpssh` as a single-operator tool.
 
    ```powershell
    New-Item -ItemType Directory -Force C:\Program Files\httpssh
-   Copy-Item .\httpssh-relay-windows-amd64-v0.2.0.exe "C:\Program Files\httpssh\httpssh-relay.exe"
+   Copy-Item .\httpssh-relay-windows-amd64-v0.3.0.exe "C:\Program Files\httpssh\httpssh-relay.exe"
    ```
 
 3. Copy `relay/config.example.yaml` to `C:\Program Files\httpssh\config.yaml`.
@@ -96,7 +96,7 @@ relay\scripts\install-logon-task.bat
 To install from a downloaded release executable instead:
 
 ```bat
-relay\scripts\install-logon-task.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.2.0.exe"
+relay\scripts\install-logon-task.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.3.0.exe"
 ```
 
 The script copies the relay and config to `%LOCALAPPDATA%\httpssh`, registers a
