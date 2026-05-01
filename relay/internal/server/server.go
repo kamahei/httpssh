@@ -74,12 +74,15 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /api/health", s.handleHealth)
 	apiMux.HandleFunc("GET /api/sessions", s.handleListSessions)
 	apiMux.HandleFunc("POST /api/sessions", s.handleCreateSession)
+	apiMux.HandleFunc("GET /api/sessions/{id}", s.handleGetSession)
 	apiMux.HandleFunc("PATCH /api/sessions/{id}", s.handleRenameSession)
 	apiMux.HandleFunc("DELETE /api/sessions/{id}", s.handleKillSession)
 	apiMux.HandleFunc("GET /api/sessions/{id}/io", s.handleWebSocket)
 	apiMux.HandleFunc("GET /api/files/roots", s.handleFileRoots)
 	apiMux.HandleFunc("GET /api/files/list", s.handleFileList)
 	apiMux.HandleFunc("GET /api/files/read", s.handleFileRead)
+	apiMux.HandleFunc("GET /api/sessions/{id}/files/list", s.handleSessionFileList)
+	apiMux.HandleFunc("GET /api/sessions/{id}/files/read", s.handleSessionFileRead)
 
 	root := http.NewServeMux()
 	root.Handle("/api/", s.mw(apiMux))
@@ -153,6 +156,16 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", "/api/sessions/"+sess.ID)
 	writeJSON(w, http.StatusCreated, sess.Info())
+}
+
+func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	sess, err := s.mgr.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sess.Info())
 }
 
 type renameRequest struct {
@@ -231,12 +244,72 @@ func (s *Server) handleFileRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleSessionFileList lists the directory rooted at the session's
+// last-known working directory. Path is interpreted relative to the
+// CWD; absolute paths are accepted only when they resolve under the
+// CWD. Navigation above the CWD is rejected; to browse a different
+// location, the operator types `cd` in the shell and re-opens the
+// browser, which re-reads the (now updated) CWD.
+func (s *Server) handleSessionFileList(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		s.writeFileError(w, fileapi.ErrDisabled)
+		return
+	}
+	id := r.PathValue("id")
+	sess, err := s.mgr.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	cwd := sess.CWD()
+	if cwd == "" {
+		writeError(w, http.StatusConflict, "cwd_unknown", "shell has not yet reported a working directory")
+		return
+	}
+	result, err := s.files.ListAt(cwd, r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	result.Root = sessionRootID(id)
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleSessionFileRead(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		s.writeFileError(w, fileapi.ErrDisabled)
+		return
+	}
+	id := r.PathValue("id")
+	sess, err := s.mgr.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	cwd := sess.CWD()
+	if cwd == "" {
+		writeError(w, http.StatusConflict, "cwd_unknown", "shell has not yet reported a working directory")
+		return
+	}
+	result, err := s.files.ReadAt(cwd, r.URL.Query().Get("path"))
+	if err != nil {
+		s.writeFileError(w, err)
+		return
+	}
+	result.Root = sessionRootID(id)
+	writeJSON(w, http.StatusOK, result)
+}
+
+func sessionRootID(id string) string { return "session:" + id }
+
 func (s *Server) writeFileError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, fileapi.ErrDisabled):
 		writeError(w, http.StatusNotFound, "files_disabled", "file browsing is not configured")
 	case errors.Is(err, fileapi.ErrRootNotFound):
 		writeError(w, http.StatusNotFound, "root_not_found", err.Error())
+	case errors.Is(err, fileapi.ErrInvalidBase):
+		writeError(w, http.StatusConflict, "cwd_invalid", err.Error())
 	case errors.Is(err, fileapi.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, fileapi.ErrForbidden):

@@ -19,7 +19,9 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `Cmd *exec.Cmd` — the spawned process.
   - `Scrollback *RingBuffer` — bounded byte buffer (default 4 MiB).
   - `subs map[*subscriber]struct{}` — current WebSocket subscribers.
-  - `mu sync.Mutex` — guards `subs` and `LastIO`.
+  - `cwd string` — last working directory reported by the shell prompt via OSC 9;9. Empty until the first prompt fires; remains set across `cd` to non-FileSystem providers (the OSC wrapper only emits for FileSystem, so the previous value is retained).
+  - `cwdTracker *cwdTracker` — stateful OSC 9;9 parser that scans every PTY read; touched only by the pump goroutine.
+  - `mu sync.Mutex` — guards `subs`, `LastIO`, and `cwd`.
 - Lifecycle:
   - `Created` (PTY+process running, 0 subs).
   - `Active` (>= 1 sub).
@@ -53,7 +55,7 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - `mu sync.RWMutex`.
   - `idleTimeout time.Duration`.
   - `scrollbackBytes int`.
-  - `shellResolver func(name string) (string, error)` — resolves `auto`, `pwsh`, `powershell`, or `cmd` to an executable path.
+  - `shellResolver func(name string) (string, []string, error)` — resolves `auto`, `pwsh`, `powershell`, or `cmd` to an executable path plus the shell-specific bootstrap arguments (e.g. `-NoLogo -NoExit -EncodedCommand <base64>` for pwsh) that install the OSC 9;9 prompt wrapper.
 - Operations: `Create`, `Get`, `List`, `Rename`, `Kill`, `Shutdown`, and background reaping on the configured `reap_interval`. Resizes are performed on the `Session` returned by `Get`.
 
 ### `FileRoot`
@@ -68,6 +70,16 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
   - Root ids are unique and contain no path separators.
   - Clients can only list/read paths that remain under the root after cleaning and symlink resolution.
   - The relay never writes, deletes, renames, or uploads files through this API.
+
+### Session-scoped file root (synthetic)
+
+- Purpose: An ad-hoc, per-request "root" that is the session's current `cwd`.
+- Identifier: `session:<sessionID>` in API responses.
+- Storage: not persisted; computed on each request from `Session.cwd`.
+- Invariants:
+  - The base path is re-read from the live session at each request, so a `cd` in the shell takes effect immediately on the next list/read call.
+  - The relay enforces the same in-jail check as configured roots: paths must remain under the session's CWD after cleaning and symlink resolution.
+  - The synthetic root does not require any `files.roots` configuration; it relies on the fact that the session owner already has shell access to that directory.
 
 ### `subscriber`
 
@@ -130,6 +142,7 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
 - "Multi-subscriber output" → PTY pump iterates `Session.subs` and non-blocking-sends to each subscriber `out` channel. If the channel is full, the slow subscriber is canceled; the session continues for the rest.
 - "List files" → resolve configured root, clean requested path, resolve symlinks, reject paths outside the root, return sorted directory entries.
 - "Read text file" → resolve path using the same rule, enforce `files.max_file_bytes`, reject binary/NUL content, decode UTF-8, UTF-16 BOM, or Shift_JIS.
+- "List files at session CWD" → look up `Session.cwd`; if empty, reject with `cwd_unknown`; otherwise treat the CWD as a synthetic root and apply the same path-cleaning, symlink-resolution, and in-jail check as a configured root. Each request re-reads `Session.cwd`, so a shell-side `cd` takes effect on the next call.
 
 ## Validation Rules
 

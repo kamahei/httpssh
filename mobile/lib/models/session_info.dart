@@ -9,6 +9,7 @@ class SessionInfo {
     required this.createdAt,
     required this.lastIo,
     required this.subscribers,
+    this.cwd = '',
   });
 
   factory SessionInfo.fromJson(Map<String, dynamic> json) => SessionInfo(
@@ -22,6 +23,7 @@ class SessionInfo {
         lastIo: DateTime.tryParse(json['lastIo'] as String? ?? '') ??
             DateTime.now(),
         subscribers: (json['subscribers'] as num?)?.toInt() ?? 0,
+        cwd: json['cwd'] as String? ?? '',
       );
 
   final String id;
@@ -32,4 +34,9 @@ class SessionInfo {
   final DateTime createdAt;
   final DateTime lastIo;
   final int subscribers;
+
+  /// Last working directory reported by the shell prompt via OSC 9;9.
+  /// Empty until the shell emits its first prompt or when the shell is
+  /// on a non-FileSystem PowerShell provider (e.g. `cd HKLM:`).
+  final String cwd;
 }

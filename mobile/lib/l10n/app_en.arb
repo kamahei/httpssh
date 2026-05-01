@@ -45,6 +45,9 @@
   "sessionsRefresh": "Refresh",
   "filesOpenFileBrowser": "Open files",
   "filesTitle": "Files",
+  "filesSessionTitle": "Files at {session}",
+  "@filesSessionTitle": {"placeholders": {"session": {}}},
+  "filesSessionCwdUnknown": "Working directory not yet known",
   "filesRefresh": "Refresh",
   "filesRoot": "Root",
   "filesOpenPath": "Open path",
@@ -113,6 +116,7 @@
   "terminalImeInputHint": "Type Japanese or multiline text",
   "terminalImeAppendEnter": "Append Enter",
   "terminalImeSend": "Send",
+  "terminalOpenFilesAtCwd": "Open files at the shell's current directory",
 
   "settingsTitle": "Settings",
   "settingsLanguage": "Language",

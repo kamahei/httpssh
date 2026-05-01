@@ -110,10 +110,34 @@ Cross-layer rule: lower layers must not import higher layers. `conpty` must not 
 4. App opens text files with `GET /api/files/read?root=<id>&path=<relative>`. The relay decodes UTF-8, UTF-16 BOM, or Shift_JIS text up to `files.max_file_bytes`.
 5. The relay rejects root escape attempts after path cleaning and symlink resolution.
 
+### Mobile file browser at the shell's CWD
+
+In addition to the configured-root flow above, the mobile app can open
+the file browser scoped to a live shell session's current working
+directory:
+
+1. When the relay spawns a shell, it injects a small bootstrap (pwsh /
+   powershell via `-EncodedCommand`, cmd via `prompt $E]9;9;$P$E\$P$G`)
+   that wraps the user's existing prompt with an OSC 9;9 emitter.
+2. The session pump scans every PTY read for `ESC ] 9;9; <path> BEL/ST`
+   sequences and updates `Session.cwd` whenever a new path is reported.
+3. The mobile terminal screen exposes a "📂 open files at CWD" action
+   that pushes the file browser in session-scoped mode.
+4. The browser calls `GET /api/sessions/{id}/files/list` (and `read`)
+   which use the session's *current* `cwd` as the jail at each
+   request. Paths are relative to the CWD; navigation above the CWD is
+   rejected — to browse elsewhere, the operator `cd`s in the shell and
+   re-opens the browser, which re-reads the (now updated) CWD.
+5. The CWD-scoped endpoints do not require `files.roots` configuration:
+   the operator already has shell access to that directory, so the
+   read-only HTTP exposure of the same directory is not a privilege
+   widening; it is a UX shortcut over the existing surface.
+
 ## External Interfaces
 
-- HTTP REST: `/api/health`, `/api/sessions`, `/api/sessions/{id}` (PATCH/DELETE).
-- File REST: `/api/files/roots`, `/api/files/list`, `/api/files/read` (read-only, bearer-gated).
+- HTTP REST: `/api/health`, `/api/sessions`, `/api/sessions/{id}` (GET/PATCH/DELETE).
+- File REST (configured roots): `/api/files/roots`, `/api/files/list`, `/api/files/read` (read-only, bearer-gated).
+- File REST (session CWD): `/api/sessions/{id}/files/list`, `/api/sessions/{id}/files/read` (read-only, bearer-gated, jailed to the session's last-reported CWD).
 - WebSocket: `/api/sessions/{id}/io`.
 - Static: `/web/*`.
 - Cloudflare Tunnel: `pwsh.<domain>` → `http://127.0.0.1:18822`.

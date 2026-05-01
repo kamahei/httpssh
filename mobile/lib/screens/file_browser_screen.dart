@@ -12,9 +12,26 @@ import '../models/file_browser.dart';
 import '../models/profile.dart';
 
 class FileBrowserScreen extends StatefulWidget {
-  const FileBrowserScreen({super.key, required this.profile});
+  const FileBrowserScreen({super.key, required this.profile})
+      : sessionId = null,
+        sessionTitle = null;
+
+  /// Opens the browser in session-scoped mode: paths are resolved
+  /// relative to the session's last-known working directory rather than
+  /// any configured file root. Bookmarks, root selection, and "add
+  /// bookmark" are hidden in this mode because the CWD is transient.
+  const FileBrowserScreen.forSession({
+    super.key,
+    required this.profile,
+    required String this.sessionId,
+    this.sessionTitle,
+  });
 
   final Profile profile;
+  final String? sessionId;
+  final String? sessionTitle;
+
+  bool get isSessionScoped => sessionId != null;
 
   @override
   State<FileBrowserScreen> createState() => _FileBrowserScreenState();
@@ -29,6 +46,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   List<FileBookmark> _bookmarks = const [];
   String? _rootId;
   String _path = '';
+  String _sessionCwd = '';
   bool _loading = true;
   String? _error;
 
@@ -46,10 +64,25 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _loadInitial() async {
+    if (widget.isSessionScoped) {
+      await _loadSessionCwd();
+      await _openPath('');
+      return;
+    }
     final bookmarks = await _bookmarkStore.load(widget.profile.id);
     if (!mounted) return;
     setState(() => _bookmarks = bookmarks);
     await _loadRoots();
+  }
+
+  Future<void> _loadSessionCwd() async {
+    try {
+      final info = await _api.getSession(widget.sessionId!);
+      if (!mounted) return;
+      setState(() => _sessionCwd = info.cwd);
+    } catch (_) {
+      // Non-fatal: the listing itself surfaces a clearer error.
+    }
   }
 
   Future<void> _loadRoots() async {
@@ -79,6 +112,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Future<void> _openPath(String path, {String? rootId}) async {
+    if (widget.isSessionScoped) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      try {
+        final result = await _api.listSessionFiles(
+          sessionId: widget.sessionId!,
+          path: path,
+        );
+        if (!mounted) return;
+        setState(() {
+          _path = result.path;
+          _entries = result.entries;
+          _loading = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
+      return;
+    }
     final targetRoot = rootId ?? _rootId;
     if (targetRoot == null) return;
     setState(() {
@@ -108,8 +166,22 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
       await _openPath(entry.path);
       return;
     }
+    if (!mounted) return;
+    if (widget.isSessionScoped) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => TextViewerScreen.forSession(
+            profile: widget.profile,
+            sessionId: widget.sessionId!,
+            path: entry.path,
+            title: entry.name,
+          ),
+        ),
+      );
+      return;
+    }
     final root = _rootId;
-    if (root == null || !mounted) return;
+    if (root == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => TextViewerScreen(
@@ -225,15 +297,19 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
+    final title = widget.isSessionScoped
+        ? t.filesSessionTitle(widget.sessionTitle ?? '')
+        : t.filesTitle;
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.filesTitle),
+        title: Text(title),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.bookmarks_outlined),
-            tooltip: t.filesBookmarks,
-            onPressed: _showBookmarks,
-          ),
+          if (!widget.isSessionScoped)
+            IconButton(
+              icon: const Icon(Icons.bookmarks_outlined),
+              tooltip: t.filesBookmarks,
+              onPressed: _showBookmarks,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: t.filesRefresh,
@@ -246,18 +322,23 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
   }
 
   Widget _buildBody(BuildContext context, AppLocalizations t) {
-    if (_loading && _roots.isEmpty) {
+    if (_loading && _entries.isEmpty && _error == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null && _roots.isEmpty) {
-      return _ErrorState(message: _error!, onRetry: _loadRoots);
+    if (!widget.isSessionScoped) {
+      if (_error != null && _roots.isEmpty) {
+        return _ErrorState(message: _error!, onRetry: _loadRoots);
+      }
+      if (_roots.isEmpty) {
+        return _EmptyState(
+          title: t.filesNoRootsTitle,
+          description: t.filesNoRootsDescription,
+        );
+      }
     }
-    if (_roots.isEmpty) {
-      return _EmptyState(
-        title: t.filesNoRootsTitle,
-        description: t.filesNoRootsDescription,
-      );
-    }
+    final rootLabel = widget.isSessionScoped
+        ? (_sessionCwd.isEmpty ? t.filesSessionCwdUnknown : _sessionCwd)
+        : (_currentRoot?.name ?? '');
     return Column(
       children: [
         Material(
@@ -267,22 +348,31 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: _rootId,
-                      items: [
-                        for (final root in _roots)
-                          DropdownMenuItem(
-                            value: root.id,
-                            child: Text(root.name),
+                  child: widget.isSessionScoped
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            rootLabel,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
                           ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) _openPath('', rootId: value);
-                      },
-                    ),
-                  ),
+                        )
+                      : DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            isExpanded: true,
+                            value: _rootId,
+                            items: [
+                              for (final root in _roots)
+                                DropdownMenuItem(
+                                  value: root.id,
+                                  child: Text(root.name),
+                                ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) _openPath('', rootId: value);
+                            },
+                          ),
+                        ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.drive_folder_upload_outlined),
@@ -294,17 +384,18 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   tooltip: t.filesOpenPath,
                   onPressed: _showPathDialog,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                  tooltip: t.filesAddBookmark,
-                  onPressed: _addBookmark,
-                ),
+                if (!widget.isSessionScoped)
+                  IconButton(
+                    icon: const Icon(Icons.bookmark_add_outlined),
+                    tooltip: t.filesAddBookmark,
+                    onPressed: _addBookmark,
+                  ),
               ],
             ),
           ),
         ),
         _Breadcrumbs(
-          rootName: _currentRoot?.name ?? '',
+          rootName: rootLabel,
           path: _path,
           onOpen: _openPath,
         ),
@@ -418,15 +509,27 @@ class TextViewerScreen extends StatefulWidget {
   const TextViewerScreen({
     super.key,
     required this.profile,
-    required this.root,
+    required String this.root,
     required this.path,
     required this.title,
-  });
+  }) : sessionId = null;
+
+  /// Reads a text file under a session's last-known working directory.
+  const TextViewerScreen.forSession({
+    super.key,
+    required this.profile,
+    required String this.sessionId,
+    required this.path,
+    required this.title,
+  }) : root = null;
 
   final Profile profile;
-  final String root;
+  final String? root;
+  final String? sessionId;
   final String path;
   final String title;
+
+  bool get isSessionScoped => sessionId != null;
 
   @override
   State<TextViewerScreen> createState() => _TextViewerScreenState();
@@ -444,7 +547,12 @@ class _TextViewerScreenState extends State<TextViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _api.readFile(root: widget.root, path: widget.path);
+    _future = widget.isSessionScoped
+        ? _api.readSessionFile(
+            sessionId: widget.sessionId!,
+            path: widget.path,
+          )
+        : _api.readFile(root: widget.root!, path: widget.path);
     _future.then(
       (doc) {
         if (!mounted) return;

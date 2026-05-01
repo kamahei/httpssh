@@ -74,7 +74,7 @@ func newTestServerWithFileService(t *testing.T, fileSvc *fileapi.Service) (*Serv
 		ScrollbackBytes: 4096,
 		IdleTimeout:     time.Hour,
 		ReapInterval:    time.Hour,
-		Shells:          func(string) (string, error) { return "fake", nil },
+		Shells:          func(string) (string, []string, error) { return "fake", nil, nil },
 		Spawn: func(string, []string, uint16, uint16) (conpty.PTY, error) {
 			return newFakePTY(), nil
 		},
@@ -364,6 +364,91 @@ func TestServer_FileDisabled(t *testing.T) {
 	srv.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s want 404", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_SessionFiles_RequiresKnownCWD(t *testing.T) {
+	fileSvc, err := fileapi.NewService(fileapi.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, mgr := newTestServerWithFileService(t, fileSvc)
+	sess, err := mgr.Create("pwsh", 80, 24, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	r := bearerReq("GET", "/api/sessions/"+sess.ID+"/files/list", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s want 409 cwd_unknown", w.Code, w.Body.String())
+	}
+}
+
+func TestServer_SessionFiles_ListAndRead(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("hi from cwd"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fileSvc, err := fileapi.NewService(fileapi.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, mgr := newTestServerWithFileService(t, fileSvc)
+	sess, err := mgr.Create("pwsh", 80, 24, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	sess.SetCWD(cwd)
+
+	r := bearerReq("GET", "/api/sessions/"+sess.ID+"/files/list", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", w.Code, w.Body.String())
+	}
+	var list map[string]any
+	decodeJSON(t, w.Body, &list)
+	if list["root"] != "session:"+sess.ID {
+		t.Fatalf("root=%v want session:%s", list["root"], sess.ID)
+	}
+	entries, _ := list["entries"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("entries=%+v want 1", entries)
+	}
+
+	r = bearerReq("GET", "/api/sessions/"+sess.ID+"/files/read?path=note.txt", nil)
+	w = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("read status=%d body=%s", w.Code, w.Body.String())
+	}
+	var doc map[string]any
+	decodeJSON(t, w.Body, &doc)
+	if doc["content"] != "hi from cwd" {
+		t.Fatalf("doc=%+v", doc)
+	}
+}
+
+func TestServer_SessionFiles_RejectsEscapeAboveCWD(t *testing.T) {
+	cwd := t.TempDir()
+	fileSvc, err := fileapi.NewService(fileapi.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, mgr := newTestServerWithFileService(t, fileSvc)
+	sess, err := mgr.Create("pwsh", 80, 24, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	sess.SetCWD(cwd)
+
+	r := bearerReq("GET", "/api/sessions/"+sess.ID+"/files/list?path=..", nil)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s want 403", w.Code, w.Body.String())
 	}
 }
 

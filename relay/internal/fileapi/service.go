@@ -30,6 +30,7 @@ var (
 	ErrNotText       = errors.New("fileapi: file is not text")
 	ErrTooLarge      = errors.New("fileapi: file is too large")
 	ErrInvalidConfig = errors.New("fileapi: invalid config")
+	ErrInvalidBase   = errors.New("fileapi: invalid base path")
 )
 
 type RootConfig struct {
@@ -151,11 +152,52 @@ func (s *Service) Roots() []RootInfo {
 	return out
 }
 
+// ListAt is the root-less variant of List used by session-scoped file
+// browsing: basePath plays the role of an ad-hoc root (the session's
+// current working directory) and is treated as the jail. The caller is
+// responsible for supplying an absolute base path; relative paths are
+// rejected with ErrInvalidBase. The returned ListResult has an empty
+// Root field; the caller is expected to fill it in with whatever
+// session-scoped identifier its API surface uses.
+func (s *Service) ListAt(basePath, path string) (ListResult, error) {
+	base, err := normalizeBase(basePath)
+	if err != nil {
+		return ListResult{}, err
+	}
+	abs, rel, err := resolveBase(base, path)
+	if err != nil {
+		return ListResult{}, err
+	}
+	return s.listResolved(base, abs, rel)
+}
+
+// ReadAt is the root-less variant of Read; see ListAt for semantics.
+func (s *Service) ReadAt(basePath, path string) (Document, error) {
+	base, err := normalizeBase(basePath)
+	if err != nil {
+		return Document{}, err
+	}
+	abs, rel, err := resolveBase(base, path)
+	if err != nil {
+		return Document{}, err
+	}
+	return s.readResolved(abs, rel)
+}
+
 func (s *Service) List(rootID, path string) (ListResult, error) {
 	root, abs, rel, err := s.resolve(rootID, path)
 	if err != nil {
 		return ListResult{}, err
 	}
+	result, err := s.listResolved(root.Path, abs, rel)
+	if err != nil {
+		return ListResult{}, err
+	}
+	result.Root = root.ID
+	return result, nil
+}
+
+func (s *Service) listResolved(base, abs, rel string) (ListResult, error) {
 	info, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -174,7 +216,7 @@ func (s *Service) List(rootID, path string) (ListResult, error) {
 	entries := make([]Entry, 0, len(items))
 	for _, item := range items {
 		entryPath := joinRelative(rel, item.Name())
-		childAbs, err := s.resolveExistingChild(root, entryPath)
+		childAbs, _, err := resolveBase(base, entryPath)
 		if err != nil {
 			if errors.Is(err, ErrForbidden) || errors.Is(err, ErrNotFound) {
 				continue
@@ -204,7 +246,6 @@ func (s *Service) List(rootID, path string) (ListResult, error) {
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
 	return ListResult{
-		Root:    root.ID,
 		Path:    filepath.ToSlash(rel),
 		Entries: entries,
 	}, nil
@@ -215,6 +256,15 @@ func (s *Service) Read(rootID, path string) (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
+	doc, err := s.readResolved(abs, rel)
+	if err != nil {
+		return Document{}, err
+	}
+	doc.Root = root.ID
+	return doc, nil
+}
+
+func (s *Service) readResolved(abs, rel string) (Document, error) {
 	info, err := os.Stat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -237,7 +287,6 @@ func (s *Service) Read(rootID, path string) (Document, error) {
 		return Document{}, err
 	}
 	return Document{
-		Root:       root.ID,
 		Path:       filepath.ToSlash(rel),
 		Name:       filepath.Base(abs),
 		Size:       info.Size(),
@@ -255,43 +304,84 @@ func (s *Service) resolve(rootID, requested string) (Root, string, string, error
 	if !ok {
 		return Root{}, "", "", ErrRootNotFound
 	}
+	abs, rel, err := resolveBase(root.Path, requested)
+	if err != nil {
+		return Root{}, "", "", err
+	}
+	return root, abs, rel, nil
+}
+
+// normalizeBase returns the absolute, symlink-resolved, cleaned form of
+// the supplied base path. The base must already be absolute; relative
+// paths are rejected with ErrInvalidBase so callers never silently get
+// CWD-relative behavior on the relay process.
+func normalizeBase(basePath string) (string, error) {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		return "", ErrInvalidBase
+	}
+	native := filepath.FromSlash(basePath)
+	if !filepath.IsAbs(native) {
+		return "", ErrInvalidBase
+	}
+	abs := filepath.Clean(native)
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	info, err := os.Stat(real)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", ErrNotDirectory
+	}
+	return filepath.Clean(real), nil
+}
+
+// resolveBase computes the absolute target for a request that names
+// `requested` relative to base, then enforces that the resolved target
+// (after symlink eval) stays under base.
+func resolveBase(base, requested string) (string, string, error) {
 	nativePath := filepath.FromSlash(strings.TrimSpace(requested))
 	var target string
-	if nativePath == "" || nativePath == "." {
-		target = root.Path
-	} else if filepath.IsAbs(nativePath) {
+	switch {
+	case nativePath == "" || nativePath == ".":
+		target = base
+	case filepath.IsAbs(nativePath):
 		target = filepath.Clean(nativePath)
-	} else {
-		target = filepath.Join(root.Path, filepath.Clean(nativePath))
+	default:
+		target = filepath.Join(base, filepath.Clean(nativePath))
 	}
 	target = filepath.Clean(target)
-	if !insideRoot(root.Path, target) {
-		return Root{}, "", "", ErrForbidden
+	if !insideRoot(base, target) {
+		return "", "", ErrForbidden
 	}
 	realTarget, err := filepath.EvalSymlinks(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Root{}, "", "", ErrNotFound
+			return "", "", ErrNotFound
 		}
-		return Root{}, "", "", err
+		return "", "", err
 	}
 	realTarget = filepath.Clean(realTarget)
-	if !insideRoot(root.Path, realTarget) {
-		return Root{}, "", "", ErrForbidden
+	if !insideRoot(base, realTarget) {
+		return "", "", ErrForbidden
 	}
-	rel, err := filepath.Rel(root.Path, realTarget)
+	rel, err := filepath.Rel(base, realTarget)
 	if err != nil {
-		return Root{}, "", "", err
+		return "", "", err
 	}
 	if rel == "." {
 		rel = ""
 	}
-	return root, realTarget, rel, nil
-}
-
-func (s *Service) resolveExistingChild(root Root, requested string) (string, error) {
-	_, abs, _, err := s.resolve(root.ID, requested)
-	return abs, err
+	return realTarget, rel, nil
 }
 
 func insideRoot(root, target string) bool {

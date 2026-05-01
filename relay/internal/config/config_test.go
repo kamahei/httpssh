@@ -179,7 +179,7 @@ func TestLoad_MissingFile(t *testing.T) {
 }
 
 func TestResolveShell_UnknownName(t *testing.T) {
-	if _, err := ResolveShell("fish"); err == nil {
+	if _, _, err := ResolveShell("fish"); err == nil {
 		t.Fatal("expected error for unknown shell")
 	}
 }
@@ -188,12 +188,15 @@ func TestResolveShell_AutoFindsSomething(t *testing.T) {
 	// On a Windows test host, "auto" should resolve to a real path. On
 	// CI without PowerShell, the function returns an error; we accept
 	// either outcome as long as the absolute path (when present) exists.
-	got, err := ResolveShell("auto")
+	got, args, err := ResolveShell("auto")
 	if err != nil {
 		t.Skipf("no PowerShell on PATH: %v", err)
 	}
 	if got == "" {
 		t.Fatal("auto returned empty path")
+	}
+	if len(args) == 0 {
+		t.Fatal("auto returned empty args; expected -EncodedCommand bootstrap")
 	}
 }
 
@@ -201,12 +204,15 @@ func TestResolveShell_CmdRequiresWindows(t *testing.T) {
 	// We cannot meaningfully run this on non-Windows; the function
 	// returns a clear error there. On Windows it should resolve to a
 	// path under SystemRoot.
-	got, err := ResolveShell("cmd")
+	got, args, err := ResolveShell("cmd")
 	if err != nil {
 		// Expected on non-Windows hosts.
 		return
 	}
 	if got == "" {
 		t.Fatal("cmd resolved to empty path")
+	}
+	if len(args) == 0 {
+		t.Fatal("cmd returned empty args; expected /D /K bootstrap")
 	}
 }

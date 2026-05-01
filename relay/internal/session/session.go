@@ -36,9 +36,18 @@ type Session struct {
 	exitCode   *int
 	exitErr    error
 	doneCh     chan struct{}
+	cwd        string
+	// cwdTracker is touched only by the pump goroutine; no mutex.
+	cwdTracker *cwdTracker
 }
 
 // SessionInfo is a snapshot of public session metadata used for listings.
+//
+// CWD is the last working directory reported by the shell prompt via
+// OSC 9;9. It is empty until the first prompt fires; it is also empty
+// when the shell's current location is on a non-FileSystem provider
+// (e.g. `cd HKLM:`), because the prompt wrapper only emits OSC 9;9 for
+// FileSystem locations.
 type SessionInfo struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
@@ -48,6 +57,7 @@ type SessionInfo struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	LastIO      time.Time `json:"lastIo"`
 	Subscribers int       `json:"subscribers"`
+	CWD         string    `json:"cwd,omitempty"`
 }
 
 // Info returns a metadata snapshot.
@@ -63,7 +73,29 @@ func (s *Session) Info() SessionInfo {
 		CreatedAt:   s.CreatedAt,
 		LastIO:      s.lastIO,
 		Subscribers: len(s.subs),
+		CWD:         s.cwd,
 	}
+}
+
+// CWD returns the last filesystem CWD reported by the shell prompt, or
+// the empty string if no OSC 9;9 has been observed yet.
+func (s *Session) CWD() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cwd
+}
+
+// SetCWD records a new working directory on the session. Production
+// callers do not invoke this directly: the pump goroutine calls it as
+// it parses OSC 9;9 sequences emitted by the shell prompt. Exposed so
+// tests outside this package can seed a CWD without writing fake OSC
+// bytes through a private PTY.
+func (s *Session) SetCWD(path string) { s.setCWD(path) }
+
+func (s *Session) setCWD(path string) {
+	s.mu.Lock()
+	s.cwd = path
+	s.mu.Unlock()
 }
 
 // Resize asks the underlying ConPTY to switch dimensions.

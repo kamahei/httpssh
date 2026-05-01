@@ -217,7 +217,7 @@ func shellResolverFor(defaultShell string) session.ShellResolver {
 	if defaultShell == "" {
 		defaultShell = "auto"
 	}
-	return func(name string) (string, error) {
+	return func(name string) (string, []string, error) {
 		if name == "" {
 			name = defaultShell
 		}

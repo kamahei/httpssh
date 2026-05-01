@@ -131,6 +131,28 @@ C → S    GET /api/sessions/4f3c2a1d9e8b7c6a554433221100ffee/io  Upgrade: webso
 S → C    {"t":"replay","d":"<recent buffer including missed output>"}
 ```
 
+## In-Band Signals Consumed by the Relay
+
+The relay also reads a single in-band escape sequence out of the PTY's
+output stream as it pumps frames to subscribers — it does not strip the
+sequence; clients see it as part of the `out` payload as usual.
+
+- **OSC 9;9 — current working directory.** Form: `ESC ] 9 ; 9 ; <path>
+  BEL` (or `ESC ] 9 ; 9 ; <path> ESC \`). When the relay spawns a
+  shell, it injects a small bootstrap (`-EncodedCommand` for
+  pwsh/powershell, `prompt $E]9;9;$P$E\$P$G` for cmd) that wraps the
+  user's prompt with this emitter. The relay parses the sequence with
+  a byte-streaming state machine that survives splits across PTY
+  reads, then updates `Session.cwd`. The current CWD is exposed via
+  `GET /api/sessions` and `GET /api/sessions/{id}` (as the `cwd`
+  field) and used by `GET /api/sessions/{id}/files/list` and `read`.
+  See `docs/architecture.md`.
+
+  The OSC 9;9 sequence is also recognized by Windows Terminal and
+  ConHost for their own "set tab CWD" UX, so injecting it does not
+  break those terminals if the operator runs the shell outside the
+  relay.
+
 ## Future Extensions (Not in v1)
 
 - Binary frames for raw PTY bytes (eliminates UTF-8 overhead for non-text streams).

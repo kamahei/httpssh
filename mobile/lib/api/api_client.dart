@@ -57,6 +57,11 @@ class ApiClient {
     return res.data ?? const {};
   }
 
+  Future<SessionInfo> getSession(String id) async {
+    final res = await _dio.get<Map<String, dynamic>>('/api/sessions/$id');
+    return SessionInfo.fromJson(res.data ?? const {});
+  }
+
   Future<List<SessionInfo>> listSessions() async {
     final res = await _dio.get<Map<String, dynamic>>('/api/sessions');
     final list = (res.data?['sessions'] as List? ?? const [])
@@ -119,6 +124,31 @@ class ApiClient {
     final res = await _dio.get<Map<String, dynamic>>(
       '/api/files/read',
       queryParameters: {'root': root, 'path': path},
+    );
+    return FileDocument.fromJson(res.data ?? const {});
+  }
+
+  /// Lists a directory under a session's last-known working directory.
+  /// Returns a `FileListResult` whose `root` is `session:<id>`.
+  Future<FileListResult> listSessionFiles({
+    required String sessionId,
+    String path = '',
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/api/sessions/$sessionId/files/list',
+      queryParameters: path.isEmpty ? null : {'path': path},
+    );
+    return FileListResult.fromJson(res.data ?? const {});
+  }
+
+  /// Reads a text file under a session's last-known working directory.
+  Future<FileDocument> readSessionFile({
+    required String sessionId,
+    required String path,
+  }) async {
+    final res = await _dio.get<Map<String, dynamic>>(
+      '/api/sessions/$sessionId/files/read',
+      queryParameters: {'path': path},
     );
     return FileDocument.fromJson(res.data ?? const {});
   }

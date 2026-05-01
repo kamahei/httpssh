@@ -13,6 +13,7 @@ import '../terminal/terminal_input.dart';
 import '../terminal/terminal_session.dart';
 import '../terminal/themes.dart';
 import '../terminal/viewport_estimate.dart';
+import 'file_browser_screen.dart';
 
 /// Multi-tab terminal workspace. Each tab owns its own [TerminalSession]
 /// (independent WebSocket + xterm) and the tabs are kept alive with an
@@ -260,6 +261,20 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
     });
   }
 
+  Future<void> _openFilesAtCwd() async {
+    if (_tabs.isEmpty) return;
+    final tab = _tabs[_active];
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FileBrowserScreen.forSession(
+          profile: widget.profile,
+          sessionId: tab.session.id,
+          sessionTitle: tab.title,
+        ),
+      ),
+    );
+  }
+
   Future<void> _renameCurrent() async {
     final t = AppLocalizations.of(context)!;
     if (_tabs.isEmpty) return;
@@ -376,6 +391,11 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
           : AppBar(
               title: Text(active.title),
               actions: [
+                IconButton(
+                  icon: const Icon(Icons.folder_open_outlined),
+                  tooltip: t.terminalOpenFilesAtCwd,
+                  onPressed: _openFilesAtCwd,
+                ),
                 IconButton(
                   icon: const Icon(Icons.drive_file_rename_outline),
                   tooltip: t.terminalRename,

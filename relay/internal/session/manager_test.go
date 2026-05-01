@@ -82,7 +82,7 @@ func newTestManager(t *testing.T, idle time.Duration) (*Manager, *clock) {
 		ScrollbackBytes: 4096,
 		IdleTimeout:     idle,
 		ReapInterval:    time.Hour, // disable timer-driven reap; we drive it manually
-		Shells:          func(name string) (string, error) { return "fake-shell", nil },
+		Shells:          func(name string) (string, []string, error) { return "fake-shell", nil, nil },
 		Spawn: func(exe string, args []string, cols, rows uint16) (conpty.PTY, error) {
 			return newFakePTY(), nil
 		},
@@ -368,6 +368,25 @@ func TestSession_UnsubscribeStopsDelivery(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("done channel not closed after unsubscribe")
 	}
+}
+
+func TestSession_PumpUpdatesCWDFromOSC(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	pty := s.pty.(*fakePTY)
+	pty.readCh <- []byte("\x1b]9;9;C:\\Users\\foo\x07PS> ")
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if s.CWD() == `C:\Users\foo` {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("cwd never updated; got %q", s.CWD())
 }
 
 func TestSession_ExitClosesSubscribers(t *testing.T) {

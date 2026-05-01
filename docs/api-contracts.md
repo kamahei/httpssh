@@ -43,11 +43,24 @@ Content-Type: application/json
       "rows": 40,
       "createdAt": "2026-04-29T14:01:02Z",
       "lastIo": "2026-04-29T14:05:11Z",
-      "subscribers": 1
+      "subscribers": 1,
+      "cwd": "C:\\Users\\Owner\\projects\\httpssh"
     }
   ]
 }
 ```
+
+`cwd` is the last working directory observed via the OSC 9;9 prompt
+hook (see `docs/architecture.md`). It is omitted (or empty) until the
+shell emits its first prompt and when the shell is on a non-FileSystem
+PowerShell provider (e.g. `cd HKLM:`).
+
+### `GET /api/sessions/{id}`
+
+Returns the metadata snapshot for a single session.
+
+Response: `200 OK` with the same shape as one entry in the `sessions`
+array above. `404 not_found` if the id is unknown.
 
 ### `POST /api/sessions`
 
@@ -138,6 +151,36 @@ Response:
 ```
 
 Errors: `400 invalid_request`, `400 not_text`, `403 forbidden`, `404 root_not_found`, `404 not_found`, `413 file_too_large`.
+
+### `GET /api/sessions/{id}/files/list?path=<relative-or-absolute>`
+
+List a directory rooted at the session's last-known working directory.
+The CWD is tracked from the OSC 9;9 prompt hook installed when the
+session is spawned (see `docs/architecture.md`). `path` is optional and
+defaults to the CWD itself; relative paths are interpreted under the
+CWD. Absolute paths are accepted only when they resolve under the CWD.
+Navigation above the CWD is rejected with `403 forbidden` — to browse a
+different location, the operator types `cd` in the shell and re-issues
+the request, which re-reads the (now updated) CWD.
+
+The response shape mirrors `/api/files/list`, with `root` set to
+`session:<id>` so clients can distinguish session-scoped responses from
+configured-root responses.
+
+Errors: `404 not_found` (session id unknown), `409 cwd_unknown` (the
+shell has not yet emitted a prompt), `409 cwd_invalid` (the CWD reported
+by the shell is not absolute or no longer exists), `400 not_directory`,
+`403 forbidden`.
+
+### `GET /api/sessions/{id}/files/read?path=<relative-or-absolute>`
+
+Read a text file under the session's last-known working directory.
+Decoding rules and size limits are identical to `/api/files/read`. The
+response shape mirrors `/api/files/read` with `root` set to
+`session:<id>`.
+
+Errors: same set as `/api/sessions/{id}/files/list`, plus the standard
+read errors (`400 not_text`, `413 file_too_large`).
 
 ## WebSocket Endpoint
 

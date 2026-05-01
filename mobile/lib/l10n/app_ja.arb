@@ -44,6 +44,8 @@
   "sessionsRefresh": "更新",
   "filesOpenFileBrowser": "ファイルを開く",
   "filesTitle": "ファイル",
+  "filesSessionTitle": "ファイル: {session}",
+  "filesSessionCwdUnknown": "作業ディレクトリ未取得",
   "filesRefresh": "更新",
   "filesRoot": "ルート",
   "filesOpenPath": "パスを開く",
@@ -102,6 +104,7 @@
   "terminalImeInputHint": "日本語または複数行テキストを入力",
   "terminalImeAppendEnter": "Enter を付けて送信",
   "terminalImeSend": "送信",
+  "terminalOpenFilesAtCwd": "シェルの現在ディレクトリでファイルを開く",
 
   "settingsTitle": "設定",
   "settingsLanguage": "言語",

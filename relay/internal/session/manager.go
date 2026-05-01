@@ -13,9 +13,12 @@ import (
 )
 
 // ShellResolver resolves a logical shell name ("pwsh", "powershell", "cmd")
-// to an absolute executable path on the host. It is injected so tests can
-// avoid touching the filesystem.
-type ShellResolver func(name string) (string, error)
+// to an absolute executable path on the host plus any shell-specific
+// bootstrap arguments the relay needs to spawn the shell with (for
+// example, command-line flags that install the OSC 9;9 prompt wrapper
+// used by the CWD tracker). It is injected so tests can avoid touching
+// the filesystem.
+type ShellResolver func(name string) (executable string, args []string, err error)
 
 // PTYFactory builds a pseudo-console attached to a child process. The
 // default uses conpty.Spawn; tests can swap in a stub that returns a fake
@@ -94,12 +97,12 @@ func (m *Manager) Create(shell string, cols, rows uint16, title string) (*Sessio
 	if m.opts.Shells == nil {
 		return nil, fmt.Errorf("manager: no shell resolver configured")
 	}
-	exe, err := m.opts.Shells(shell)
+	exe, args, err := m.opts.Shells(shell)
 	if err != nil {
 		return nil, err
 	}
 
-	pty, err := m.opts.Spawn(exe, nil, cols, rows)
+	pty, err := m.opts.Spawn(exe, args, cols, rows)
 	if err != nil {
 		return nil, fmt.Errorf("manager: spawn: %w", err)
 	}
@@ -122,6 +125,7 @@ func (m *Manager) Create(shell string, cols, rows uint16, title string) (*Sessio
 		subs:       make(map[*subscriber]struct{}),
 		lastIO:     now,
 		doneCh:     make(chan struct{}),
+		cwdTracker: newCWDTracker(),
 	}
 
 	m.mu.Lock()
@@ -279,6 +283,9 @@ func (m *Manager) pump(s *Session) {
 			s.mu.Lock()
 			s.lastIO = time.Now()
 			s.mu.Unlock()
+			for _, p := range s.cwdTracker.feed(data) {
+				s.setCWD(p)
+			}
 			s.fanout(ServerFrame{T: FrameOut, D: string(data)})
 		}
 		if err != nil {
