@@ -43,6 +43,12 @@ class TerminalSession extends ChangeNotifier {
   int _retryAttempt = 0;
   bool _disposed = false;
 
+  /// Bumped every time a new WebSocket is opened. Stream callbacks captured
+  /// against an older generation must short-circuit so an intentional
+  /// reconnect (e.g. line-wrap mode change) does not trigger a redundant
+  /// schedule from the stale listener's onDone.
+  int _channelGen = 0;
+
   TerminalConnectionState _state = TerminalConnectionState.connecting;
   TerminalConnectionState get state => _state;
 
@@ -52,13 +58,49 @@ class TerminalSession extends ChangeNotifier {
   void updateLineWrapMode(bool lineWrap) {
     if (_lineWrap == lineWrap) return;
     _lineWrap = lineWrap;
-    _sendResize(terminal.viewWidth, terminal.viewHeight);
+    // Switching wrap mode changes the remote PTY width, which in turn
+    // makes the shell send a SIGWINCH-driven prompt redraw. xterm's
+    // local reflow of the existing buffer composes with that redraw and
+    // produces visible duplicate lines / shifted prompts. Drop the WS
+    // and let the relay's replay rebuild the local buffer at the new
+    // width — the only reliable way to get a clean slate.
+    _hardReconnect('line-wrap mode changed');
   }
 
   void updateColumnWidth(int fixedCols) {
     if (_fixedCols == fixedCols) return;
     _fixedCols = fixedCols;
     _sendResize(terminal.viewWidth, terminal.viewHeight);
+  }
+
+  /// Tear down the WebSocket and immediately reconnect. The relay's
+  /// `replay` frame on subscribe rebuilds the local buffer from its own
+  /// authoritative scrollback, which is the only reliable way to clear
+  /// reflow / SIGWINCH-redraw artifacts after a mode change.
+  void _hardReconnect(String reason) {
+    if (_disposed) return;
+    _retryTimer?.cancel();
+    _pingTimer?.cancel();
+    _pingTimer = null;
+    // Bumping the generation invalidates the previous listener: any
+    // late onDone/onError callback from the channel we are about to
+    // close will see it no longer owns the active connection and bail,
+    // so we don't double-schedule a reconnect on top of our own
+    // _connect() below.
+    _channelGen++;
+    try {
+      _channel?.sink.close();
+    } catch (_) {}
+    _channel = null;
+    // Pre-clear the local buffer so the user does not see stale content
+    // flash during the brief reconnect window. The replay frame will
+    // rewrite everything once the new WS is up.
+    terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
+    terminal.buffer.clear();
+    terminal.buffer.setCursor(0, 0);
+    _retryAttempt = 0;
+    _setState(TerminalConnectionState.reconnecting, reason);
+    _connect();
   }
 
   void _setState(TerminalConnectionState s, [String? err]) {
@@ -104,10 +146,15 @@ class TerminalSession extends ChangeNotifier {
       _scheduleReconnect('connect failed: $e');
       return;
     }
+    final myGen = ++_channelGen;
     _channel!.stream.listen(
       _onMessage,
-      onError: (Object e) => _scheduleReconnect('error: $e'),
+      onError: (Object e) {
+        if (myGen != _channelGen) return;
+        _scheduleReconnect('error: $e');
+      },
       onDone: () {
+        if (myGen != _channelGen) return;
         if (_state == TerminalConnectionState.closed) return;
         _scheduleReconnect('socket closed');
       },
@@ -141,6 +188,17 @@ class TerminalSession extends ChangeNotifier {
     }
     switch (frame['t'] as String?) {
       case 'replay':
+        // Force the local terminal back to a fully clean state before
+        // re-writing scrollback. Plain buffer.clear() does not reset
+        // Terminal-level mode bits like the alt buffer or the saved
+        // cursor; without this aggressive reset, leftover state from
+        // before the reconnect can compose with the replay bytes and
+        // produce visible duplicate lines.
+        //   ESC [ ? 1049 l  exit alt buffer (back to main)
+        //   ESC [ H         home cursor
+        //   ESC [ 2 J       erase visible display
+        //   ESC [ 3 J       erase scrollback
+        terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
         terminal.buffer.clear();
         terminal.buffer.setCursor(0, 0);
         terminal.write((frame['d'] as String?) ?? '');
