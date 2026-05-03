@@ -39,7 +39,7 @@ $Binary = Resolve-RequiredPath -Path $Binary -Label "Binary"
 $Config = Resolve-RequiredPath -Path $Config -Label "Config"
 
 $installDir = Split-Path -Parent $Binary
-$runScript = Join-Path $installDir "run-logon-task.bat"
+$runScript = Join-Path $installDir "run-logon-task.cmd"
 $launcherScript = Join-Path $installDir "run-logon-task.vbs"
 $logDir = Join-Path $installDir "logs"
 
@@ -63,7 +63,7 @@ Dim shell, fso, scriptDir, runScript
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
-runScript = fso.BuildPath(scriptDir, "run-logon-task.bat")
+runScript = fso.BuildPath(scriptDir, "run-logon-task.cmd")
 
 WScript.Quit shell.Run("""" & runScript & """", 0, True)
 '@

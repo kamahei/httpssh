@@ -89,14 +89,14 @@ account with password logon. The relay starts only after that user logs on.
 
 From a normal Command Prompt or PowerShell in the repository checkout:
 
-```bat
-relay\scripts\install-logon-task.bat
+```cmd
+relay\scripts\install-logon-task.cmd
 ```
 
 To install from a downloaded release executable instead:
 
-```bat
-relay\scripts\install-logon-task.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.3.0.exe"
+```cmd
+relay\scripts\install-logon-task.cmd "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.3.0.exe"
 ```
 
 The script copies the relay and config to `%LOCALAPPDATA%\httpssh`, registers a
@@ -110,12 +110,12 @@ logon task.
 
 Uninstall:
 
-```bat
-relay\scripts\uninstall-logon-task.bat
+```cmd
+relay\scripts\uninstall-logon-task.cmd
 ```
 
 By default this removes the task and stops the relay while keeping the copied
-config and logs. Use `relay\scripts\uninstall-logon-task.bat /remove-files` to
+config and logs. Use `relay\scripts\uninstall-logon-task.cmd /remove-files` to
 remove `%LOCALAPPDATA%\httpssh` too.
 
 ## Use The Web Test Client

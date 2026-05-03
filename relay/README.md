@@ -119,30 +119,30 @@ Start-Service httpssh-relay
 For a local build that already has `dist/httpssh-relay.exe` and `config.yaml`,
 an elevated Command Prompt or PowerShell can run:
 
-```bat
-scripts\install-service.bat
+```cmd
+scripts\install-service.cmd
 ```
 
 To install from a downloaded release executable instead, pass the executable
 path as the first argument. The script still copies `config.yaml` from the
 relay directory:
 
-```bat
-scripts\install-service.bat "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.2.0.exe"
+```cmd
+scripts\install-service.cmd "%USERPROFILE%\Downloads\httpssh-relay-windows-amd64-v0.2.0.exe"
 ```
 
 To uninstall the service and remove the copied files from
 `C:\Program Files\httpssh`, run:
 
-```bat
-scripts\uninstall-service.bat
+```cmd
+scripts\uninstall-service.cmd
 ```
 
 If the relay should inherit the signed-in user's environment instead of running
 as `LocalSystem`, install it as a current-user logon task:
 
-```bat
-scripts\install-logon-task.bat
+```cmd
+scripts\install-logon-task.cmd
 ```
 
 This copies files to `%LOCALAPPDATA%\httpssh`, registers a hidden scheduled task
@@ -150,8 +150,8 @@ named `httpssh-relay-logon`, and starts it immediately. Do not run this task and
 the `httpssh-relay` Windows service on the same `listen` address at the same
 time. Remove the task with:
 
-```bat
-scripts\uninstall-logon-task.bat
+```cmd
+scripts\uninstall-logon-task.cmd
 ```
 
 Pass `/remove-files` to the uninstall script if you also want to remove the
