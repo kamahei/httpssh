@@ -230,6 +230,56 @@ func TestServer_CreateSessionInvalidDimensions(t *testing.T) {
 	}
 }
 
+func TestServer_CreateSessionIdleTimeout(t *testing.T) {
+	srv, _ := newTestServer(t)
+	h := srv.Handler()
+
+	cases := []struct {
+		name    string
+		body    string
+		want    int64
+		wantErr bool
+	}{
+		{"omitted_uses_default", `{"shell":"pwsh"}`, -1, false},
+		{"zero_means_unlimited", `{"shell":"pwsh","idleTimeoutSeconds":0}`, 0, false},
+		{"positive_value", `{"shell":"pwsh","idleTimeoutSeconds":3600}`, 3600, false},
+		{"negative_rejected", `{"shell":"pwsh","idleTimeoutSeconds":-1}`, 0, true},
+		{"too_large_rejected", `{"shell":"pwsh","idleTimeoutSeconds":99999999999}`, 0, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := bearerReq("POST", "/api/sessions", []byte(tc.body))
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if tc.wantErr {
+				if w.Code != http.StatusBadRequest {
+					t.Fatalf("status=%d want 400, body=%s", w.Code, w.Body.String())
+				}
+				return
+			}
+			if w.Code != http.StatusCreated {
+				t.Fatalf("status=%d want 201, body=%s", w.Code, w.Body.String())
+			}
+			var got map[string]any
+			decodeJSON(t, w.Body, &got)
+			gotTimeout, ok := got["idleTimeoutSeconds"].(float64)
+			if !ok {
+				t.Fatalf("idleTimeoutSeconds missing or wrong type: %v", got["idleTimeoutSeconds"])
+			}
+			if tc.want >= 0 && int64(gotTimeout) != tc.want {
+				t.Fatalf("idleTimeoutSeconds=%d want %d", int64(gotTimeout), tc.want)
+			}
+			// For the "omitted" case we can't predict the value (it
+			// comes from the test manager's default), just assert it
+			// is non-negative.
+			if tc.want < 0 && int64(gotTimeout) < 0 {
+				t.Fatalf("idleTimeoutSeconds=%d expected >= 0", int64(gotTimeout))
+			}
+		})
+	}
+}
+
 func TestServer_AuthRequired(t *testing.T) {
 	srv, _ := newTestServer(t)
 	r := httptest.NewRequest("GET", "/api/health", nil)
@@ -373,7 +423,7 @@ func TestServer_SessionFiles_RequiresKnownCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, mgr := newTestServerWithFileService(t, fileSvc)
-	sess, err := mgr.Create("pwsh", 80, 24, "")
+	sess, err := mgr.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -396,7 +446,7 @@ func TestServer_SessionFiles_ListAndRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, mgr := newTestServerWithFileService(t, fileSvc)
-	sess, err := mgr.Create("pwsh", 80, 24, "")
+	sess, err := mgr.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -438,7 +488,7 @@ func TestServer_SessionFiles_RejectsEscapeAboveCWD(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv, mgr := newTestServerWithFileService(t, fileSvc)
-	sess, err := mgr.Create("pwsh", 80, 24, "")
+	sess, err := mgr.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -456,7 +506,7 @@ func TestServer_SessionFiles_RejectsEscapeAboveCWD(t *testing.T) {
 
 func TestServer_WebSocketRefusesWithoutSubprotocol(t *testing.T) {
 	srv, mgr := newTestServer(t)
-	s, err := mgr.Create("pwsh", 80, 24, "")
+	s, err := mgr.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

@@ -74,6 +74,7 @@ class ApiClient {
     int cols = 80,
     int rows = 24,
     String? title,
+    int? idleTimeoutSeconds,
   }) async {
     final res = await _dio.post<Map<String, dynamic>>(
       '/api/sessions',
@@ -82,6 +83,8 @@ class ApiClient {
         'cols': cols,
         'rows': rows,
         if (title != null && title.isNotEmpty) 'title': title,
+        if (idleTimeoutSeconds != null)
+          'idleTimeoutSeconds': idleTimeoutSeconds,
       },
     );
     return SessionInfo.fromJson(res.data ?? const {});

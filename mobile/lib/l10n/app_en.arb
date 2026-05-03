@@ -134,6 +134,13 @@
   "settingsLineWrapScroll": "Scroll horizontally (no wrap)",
   "settingsLineWrapHint": "When set to scroll, the terminal stays at {cols} columns and you swipe horizontally to see the rest. Helps with PowerShell, which sometimes formats wide output regardless of the actual width.",
   "@settingsLineWrapHint": {"placeholders": {"cols": {}}},
+  "settingsSessionTimeout": "Session retention",
+  "settingsSessionTimeoutHint": "How long the relay keeps an idle session alive after you close the app, so you can reattach later. Set to Unlimited to never expire.",
+  "settingsSessionTimeoutUnlimited": "Unlimited",
+  "settingsSessionTimeoutHours": "{hours} h",
+  "@settingsSessionTimeoutHours": {"placeholders": {"hours": {}}},
+  "settingsSessionTimeoutDays": "{days} d",
+  "@settingsSessionTimeoutDays": {"placeholders": {"days": {}}},
   "settingsAbout": "About",
 
   "errorAuthFailed": "Authentication failed",

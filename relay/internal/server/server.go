@@ -119,11 +119,18 @@ func (s *Server) handleListSessions(w http.ResponseWriter, _ *http.Request) {
 }
 
 type createRequest struct {
-	Shell string `json:"shell"`
-	Cols  uint16 `json:"cols"`
-	Rows  uint16 `json:"rows"`
-	Title string `json:"title"`
+	Shell              string `json:"shell"`
+	Cols               uint16 `json:"cols"`
+	Rows               uint16 `json:"rows"`
+	Title              string `json:"title"`
+	IdleTimeoutSeconds *int64 `json:"idleTimeoutSeconds,omitempty"`
 }
+
+// maxIdleTimeoutSeconds caps client-supplied per-session idle timeouts
+// at one year. The slider in the mobile app tops out at one week; this
+// upper bound is a sanity guard against absurd values from other
+// clients.
+const maxIdleTimeoutSeconds int64 = 366 * 24 * 60 * 60
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
@@ -141,7 +148,19 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		req.Shell = "pwsh"
 	}
 
-	sess, err := s.mgr.Create(req.Shell, req.Cols, req.Rows, req.Title)
+	// idleTimeout: nil -> manager default, 0 -> unlimited, >0 -> per-session.
+	idleTimeout := time.Duration(-1)
+	if req.IdleTimeoutSeconds != nil {
+		secs := *req.IdleTimeoutSeconds
+		if secs < 0 || secs > maxIdleTimeoutSeconds {
+			writeError(w, http.StatusBadRequest, "invalid_idle_timeout",
+				"idleTimeoutSeconds must be between 0 and 31622400")
+			return
+		}
+		idleTimeout = time.Duration(secs) * time.Second
+	}
+
+	sess, err := s.mgr.Create(req.Shell, req.Cols, req.Rows, req.Title, idleTimeout)
 	if err != nil {
 		switch {
 		case errors.Is(err, session.ErrInvalidDimensions):

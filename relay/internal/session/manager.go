@@ -84,7 +84,12 @@ func NewManager(opts Options) *Manager {
 }
 
 // Create spawns a new session.
-func (m *Manager) Create(shell string, cols, rows uint16, title string) (*Session, error) {
+//
+// idleTimeout controls when this session is eligible for the idle reaper:
+// a positive value sets a per-session idle timeout, 0 disables reaping
+// (the session lives until killed explicitly or the shell exits), and a
+// negative value falls back to the manager's default IdleTimeout.
+func (m *Manager) Create(shell string, cols, rows uint16, title string, idleTimeout time.Duration) (*Session, error) {
 	if cols == 0 {
 		cols = 80
 	}
@@ -113,19 +118,24 @@ func (m *Manager) Create(shell string, cols, rows uint16, title string) (*Sessio
 		title = fmt.Sprintf("%s %s", shellLabel(shell), now.Format("2006-01-02 15:04"))
 	}
 
+	if idleTimeout < 0 {
+		idleTimeout = m.opts.IdleTimeout
+	}
+
 	s := &Session{
-		ID:         id,
-		Title:      title,
-		Shell:      exe,
-		CreatedAt:  now,
-		cols:       cols,
-		rows:       rows,
-		pty:        pty,
-		scrollback: NewRingBuffer(m.opts.ScrollbackBytes),
-		subs:       make(map[*subscriber]struct{}),
-		lastIO:     now,
-		doneCh:     make(chan struct{}),
-		cwdTracker: newCWDTracker(),
+		ID:          id,
+		Title:       title,
+		Shell:       exe,
+		CreatedAt:   now,
+		cols:        cols,
+		rows:        rows,
+		pty:         pty,
+		scrollback:  NewRingBuffer(m.opts.ScrollbackBytes),
+		subs:        make(map[*subscriber]struct{}),
+		lastIO:      now,
+		idleTimeout: idleTimeout,
+		doneCh:      make(chan struct{}),
+		cwdTracker:  newCWDTracker(),
 	}
 
 	m.mu.Lock()
@@ -241,15 +251,22 @@ func (m *Manager) runReaper(ctx context.Context) {
 }
 
 // reapOnce performs a single GC pass. Exposed for tests.
+//
+// Each session uses its own per-session idleTimeout (set at Create time);
+// a session with idleTimeout == 0 is exempt from reaping ("unlimited"),
+// allowing operators to keep specific sessions reattachable indefinitely.
 func (m *Manager) reapOnce() int {
 	now := m.opts.Now()
-	cutoff := now.Add(-m.opts.IdleTimeout)
 
 	m.mu.RLock()
 	candidates := make([]*Session, 0)
 	for _, s := range m.byID {
 		s.mu.Lock()
-		stale := !s.closed && len(s.subs) == 0 && s.lastIO.Before(cutoff)
+		stale := false
+		if s.idleTimeout > 0 {
+			cutoff := now.Add(-s.idleTimeout)
+			stale = !s.closed && len(s.subs) == 0 && s.lastIO.Before(cutoff)
+		}
 		s.mu.Unlock()
 		if stale {
 			candidates = append(candidates, s)

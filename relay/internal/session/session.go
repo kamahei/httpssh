@@ -26,17 +26,18 @@ type Session struct {
 	Shell     string
 	CreatedAt time.Time
 
-	mu         sync.Mutex
-	cols, rows uint16
-	pty        conpty.PTY
-	scrollback *RingBuffer
-	subs       map[*subscriber]struct{}
-	lastIO     time.Time
-	closed     bool
-	exitCode   *int
-	exitErr    error
-	doneCh     chan struct{}
-	cwd        string
+	mu          sync.Mutex
+	cols, rows  uint16
+	pty         conpty.PTY
+	scrollback  *RingBuffer
+	subs        map[*subscriber]struct{}
+	lastIO      time.Time
+	idleTimeout time.Duration // 0 = never reaped
+	closed      bool
+	exitCode    *int
+	exitErr     error
+	doneCh      chan struct{}
+	cwd         string
 	// cwdTracker is touched only by the pump goroutine; no mutex.
 	cwdTracker *cwdTracker
 }
@@ -49,15 +50,16 @@ type Session struct {
 // (e.g. `cd HKLM:`), because the prompt wrapper only emits OSC 9;9 for
 // FileSystem locations.
 type SessionInfo struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Shell       string    `json:"shell"`
-	Cols        uint16    `json:"cols"`
-	Rows        uint16    `json:"rows"`
-	CreatedAt   time.Time `json:"createdAt"`
-	LastIO      time.Time `json:"lastIo"`
-	Subscribers int       `json:"subscribers"`
-	CWD         string    `json:"cwd,omitempty"`
+	ID                 string    `json:"id"`
+	Title              string    `json:"title"`
+	Shell              string    `json:"shell"`
+	Cols               uint16    `json:"cols"`
+	Rows               uint16    `json:"rows"`
+	CreatedAt          time.Time `json:"createdAt"`
+	LastIO             time.Time `json:"lastIo"`
+	Subscribers        int       `json:"subscribers"`
+	CWD                string    `json:"cwd,omitempty"`
+	IdleTimeoutSeconds int64     `json:"idleTimeoutSeconds"`
 }
 
 // Info returns a metadata snapshot.
@@ -65,15 +67,16 @@ func (s *Session) Info() SessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return SessionInfo{
-		ID:          s.ID,
-		Title:       s.Title,
-		Shell:       s.Shell,
-		Cols:        s.cols,
-		Rows:        s.rows,
-		CreatedAt:   s.CreatedAt,
-		LastIO:      s.lastIO,
-		Subscribers: len(s.subs),
-		CWD:         s.cwd,
+		ID:                 s.ID,
+		Title:              s.Title,
+		Shell:              s.Shell,
+		Cols:               s.cols,
+		Rows:               s.rows,
+		CreatedAt:          s.CreatedAt,
+		LastIO:             s.lastIO,
+		Subscribers:        len(s.subs),
+		CWD:                s.cwd,
+		IdleTimeoutSeconds: int64(s.idleTimeout / time.Second),
 	}
 }
 

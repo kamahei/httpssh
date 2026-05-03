@@ -131,3 +131,39 @@ class LineWrapNotifier extends AsyncNotifier<bool> {
 
 final lineWrapProvider =
     AsyncNotifierProvider<LineWrapNotifier, bool>(LineWrapNotifier.new);
+
+/// Per-session idle reaper budget (seconds) sent on `POST /api/sessions`.
+/// `0` means "unlimited" (the relay never reaps the session for idleness).
+/// The default mirrors the relay's historical behavior of 24 hours so
+/// existing users see no change until they touch the slider.
+class SessionIdleTimeoutNotifier extends AsyncNotifier<int> {
+  static const _key = 'settings.sessionIdleTimeoutSeconds';
+  static const int defaultSeconds = 24 * 60 * 60;
+  static const int maxSeconds = 168 * 60 * 60;
+
+  @override
+  Future<int> build() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(_key);
+    if (raw == null) return defaultSeconds;
+    return _normalize(raw);
+  }
+
+  Future<void> set(int seconds) async {
+    final value = _normalize(seconds);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_key, value);
+    state = AsyncData(value);
+  }
+
+  static int _normalize(int seconds) {
+    if (seconds <= 0) return 0;
+    if (seconds > maxSeconds) return maxSeconds;
+    return seconds;
+  }
+}
+
+final sessionIdleTimeoutProvider =
+    AsyncNotifierProvider<SessionIdleTimeoutNotifier, int>(
+  SessionIdleTimeoutNotifier.new,
+);

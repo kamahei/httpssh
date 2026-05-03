@@ -112,7 +112,7 @@ func (c *clock) Advance(d time.Duration) {
 func TestManager_CreateAndList(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
 
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestManager_CreateAndList(t *testing.T) {
 
 func TestManager_KillRemovesFromList(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestManager_KillRemovesFromList(t *testing.T) {
 
 func TestManager_Reap_KillsIdleSessions(t *testing.T) {
 	m, c := newTestManager(t, 5*time.Minute)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -174,9 +174,60 @@ func TestManager_Reap_KillsIdleSessions(t *testing.T) {
 	t.Fatal("session still in manager after reap")
 }
 
+func TestManager_Reap_PerSessionTimeout(t *testing.T) {
+	// Manager default 1h, but the per-session override on `short`
+	// is 5m so the reaper should pick it up before `long`.
+	m, c := newTestManager(t, time.Hour)
+	short, err := m.Create("pwsh", 80, 24, "short", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("create short: %v", err)
+	}
+	long, err := m.Create("pwsh", 80, 24, "long", time.Hour)
+	if err != nil {
+		t.Fatalf("create long: %v", err)
+	}
+
+	c.Advance(10 * time.Minute)
+	if got := m.reapOnce(); got != 1 {
+		t.Fatalf("reapOnce after 10m = %d, want 1", got)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := m.Get(short.ID); err == ErrNotFound {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := m.Get(short.ID); err != ErrNotFound {
+		t.Fatal("short session still listed after 10m idle")
+	}
+	if _, err := m.Get(long.ID); err != nil {
+		t.Fatalf("long session unexpectedly removed: %v", err)
+	}
+}
+
+func TestManager_Reap_UnlimitedSession(t *testing.T) {
+	// A session created with idleTimeout == 0 is exempt from the
+	// reaper regardless of how long it has been idle.
+	m, c := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "forever", 0)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	c.Advance(100 * time.Hour)
+	if got := m.reapOnce(); got != 0 {
+		t.Fatalf("reapOnce on unlimited session = %d, want 0", got)
+	}
+	if _, err := m.Get(s.ID); err != nil {
+		t.Fatalf("unlimited session removed: %v", err)
+	}
+}
+
 func TestManager_Reap_SkipsActiveSessions(t *testing.T) {
 	m, c := newTestManager(t, 5*time.Minute)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -197,17 +248,17 @@ func TestManager_Reap_SkipsActiveSessions(t *testing.T) {
 
 func TestManager_RejectsInvalidDimensions(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	if _, err := m.Create("pwsh", MaxCols+1, 24, ""); err == nil {
+	if _, err := m.Create("pwsh", MaxCols+1, 24, "", -1); err == nil {
 		t.Fatal("expected ErrInvalidDimensions, got nil")
 	}
-	if _, err := m.Create("pwsh", 80, MaxRows+1, ""); err == nil {
+	if _, err := m.Create("pwsh", 80, MaxRows+1, "", -1); err == nil {
 		t.Fatal("expected ErrInvalidDimensions, got nil")
 	}
 }
 
 func TestSession_WriteInputForwardsToPTY(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -226,7 +277,7 @@ func TestSession_WriteInputForwardsToPTY(t *testing.T) {
 
 func TestSession_ResizeUpdatesPTYAndDimensions(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -248,7 +299,7 @@ func TestSession_ResizeUpdatesPTYAndDimensions(t *testing.T) {
 
 func TestSession_ResizeRejectsBounds(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -268,7 +319,7 @@ func TestSession_ResizeRejectsBounds(t *testing.T) {
 
 func TestSession_SubscribeReceivesReplayThenLive(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -316,7 +367,7 @@ func TestSession_SubscribeReceivesReplayThenLive(t *testing.T) {
 
 func TestSession_FanoutToMultipleSubscribers(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -354,7 +405,7 @@ func TestSession_FanoutToMultipleSubscribers(t *testing.T) {
 
 func TestSession_UnsubscribeStopsDelivery(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -372,7 +423,7 @@ func TestSession_UnsubscribeStopsDelivery(t *testing.T) {
 
 func TestSession_PumpUpdatesCWDFromOSC(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -391,7 +442,7 @@ func TestSession_PumpUpdatesCWDFromOSC(t *testing.T) {
 
 func TestSession_ExitClosesSubscribers(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
-	s, err := m.Create("pwsh", 80, 24, "")
+	s, err := m.Create("pwsh", 80, 24, "", -1)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}

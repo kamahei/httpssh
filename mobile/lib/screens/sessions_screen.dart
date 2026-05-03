@@ -80,6 +80,10 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
             data: (v) => v,
             orElse: () => true,
           );
+      final idleTimeout = ref.read(sessionIdleTimeoutProvider).maybeWhen(
+            data: (v) => v,
+            orElse: () => SessionIdleTimeoutNotifier.defaultSeconds,
+          );
       final dims = estimateViewportCells(context, fontSize: fontSize);
       // Pre-size the ConPTY to the same remote width policy used after
       // attach. PowerShell can cache WindowWidth at startup, so a narrow
@@ -95,6 +99,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
         shell: shell,
         cols: cols,
         rows: dims.rows,
+        idleTimeoutSeconds: idleTimeout,
       );
       if (!mounted) return;
       _refresh();

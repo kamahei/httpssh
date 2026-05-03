@@ -10,6 +10,7 @@ class SessionInfo {
     required this.lastIo,
     required this.subscribers,
     this.cwd = '',
+    this.idleTimeoutSeconds = 0,
   });
 
   factory SessionInfo.fromJson(Map<String, dynamic> json) => SessionInfo(
@@ -24,6 +25,8 @@ class SessionInfo {
             DateTime.now(),
         subscribers: (json['subscribers'] as num?)?.toInt() ?? 0,
         cwd: json['cwd'] as String? ?? '',
+        idleTimeoutSeconds:
+            (json['idleTimeoutSeconds'] as num?)?.toInt() ?? 0,
       );
 
   final String id;
@@ -39,4 +42,10 @@ class SessionInfo {
   /// Empty until the shell emits its first prompt or when the shell is
   /// on a non-FileSystem PowerShell provider (e.g. `cd HKLM:`).
   final String cwd;
+
+  /// Per-session idle reaper budget in seconds. 0 means the session
+  /// never expires from idleness; a positive value is the time after
+  /// which the relay reaps the session if it has zero subscribers and
+  /// no I/O.
+  final int idleTimeoutSeconds;
 }

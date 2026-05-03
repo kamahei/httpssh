@@ -44,7 +44,8 @@ Content-Type: application/json
       "createdAt": "2026-04-29T14:01:02Z",
       "lastIo": "2026-04-29T14:05:11Z",
       "subscribers": 1,
-      "cwd": "C:\\Users\\Owner\\projects\\httpssh"
+      "cwd": "C:\\Users\\Owner\\projects\\httpssh",
+      "idleTimeoutSeconds": 86400
     }
   ]
 }
@@ -54,6 +55,12 @@ Content-Type: application/json
 hook (see `docs/architecture.md`). It is omitted (or empty) until the
 shell emits its first prompt and when the shell is on a non-FileSystem
 PowerShell provider (e.g. `cd HKLM:`).
+
+`idleTimeoutSeconds` is the per-session idle reaper budget. The relay
+kills a session that has had zero subscribers and no I/O for this many
+seconds. `0` means "never expire" (the session lives until the shell
+exits or it is explicitly deleted). Omitting the field at create time
+falls back to the relay's `session.idle_timeout` default.
 
 ### `GET /api/sessions/{id}`
 
@@ -69,10 +76,11 @@ Create a new session.
 Request:
 ```json
 {
-  "shell": "pwsh",          // optional; one of "auto"|"pwsh"|"powershell"|"cmd"; omitted means "pwsh"; send "auto" for pwsh-then-powershell fallback
-  "cols": 120,              // optional; default 80
-  "rows": 40,               // optional; default 24
-  "title": "logs"           // optional; defaults to "<shell> <timestamp>"
+  "shell": "pwsh",            // optional; one of "auto"|"pwsh"|"powershell"|"cmd"; omitted means "pwsh"; send "auto" for pwsh-then-powershell fallback
+  "cols": 120,                // optional; default 80
+  "rows": 40,                 // optional; default 24
+  "title": "logs",            // optional; defaults to "<shell> <timestamp>"
+  "idleTimeoutSeconds": 86400 // optional; per-session idle reaper budget in seconds. 0 means "never expire". Omit to use the relay's session.idle_timeout default. Capped at 31622400 (366 days).
 }
 ```
 
@@ -81,10 +89,10 @@ Response:
 HTTP/1.1 201 Created
 Location: /api/sessions/4f3c2a1d9e8b7c6a554433221100ffee
 
-{ "id": "4f3c2a1d9e8b7c6a554433221100ffee", "title": "logs", "shell": "...", "cols": 120, "rows": 40, "createdAt": "..." }
+{ "id": "4f3c2a1d9e8b7c6a554433221100ffee", "title": "logs", "shell": "...", "cols": 120, "rows": 40, "createdAt": "...", "idleTimeoutSeconds": 86400 }
 ```
 
-Errors: `400 invalid_dimensions`, `400 invalid_shell`, `503 spawn_failed`.
+Errors: `400 invalid_dimensions`, `400 invalid_shell`, `400 invalid_idle_timeout`, `503 spawn_failed`.
 
 ### `PATCH /api/sessions/{id}`
 

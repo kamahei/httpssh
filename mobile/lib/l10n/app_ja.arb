@@ -121,6 +121,11 @@
   "settingsLineWrapWrap": "画面端で折り返す",
   "settingsLineWrapScroll": "折り返さず横にスクロール",
   "settingsLineWrapHint": "「横にスクロール」にすると、ターミナルは {cols} 列固定で、はみ出した分は横スワイプで見られます。PowerShell が画面幅に関係なくワイドに整形してしまう場合に有効です。",
+  "settingsSessionTimeout": "セッション有効時間",
+  "settingsSessionTimeoutHint": "アプリを閉じたあと、無操作のセッションをサーバ側に保持する時間。再接続できる猶予になります。「無期限」にすると失効しません。",
+  "settingsSessionTimeoutUnlimited": "無期限",
+  "settingsSessionTimeoutHours": "{hours} 時間",
+  "settingsSessionTimeoutDays": "{days} 日",
   "settingsAbout": "情報",
 
   "errorAuthFailed": "認証に失敗しました",
