@@ -22,8 +22,10 @@ class TerminalSession extends ChangeNotifier {
     required this.api,
     required this.session,
     required bool lineWrap,
+    required int fixedCols,
   })  : terminal = Terminal(maxLines: 10000),
-        _lineWrap = lineWrap {
+        _lineWrap = lineWrap,
+        _fixedCols = fixedCols {
     terminal.onOutput = _sendInput;
     terminal.onResize = (cols, rows, _, __) => _sendResize(cols, rows);
     _connect();
@@ -33,6 +35,7 @@ class TerminalSession extends ChangeNotifier {
   final SessionInfo session;
   final Terminal terminal;
   bool _lineWrap;
+  int _fixedCols;
 
   WebSocketChannel? _channel;
   Timer? _retryTimer;
@@ -49,6 +52,12 @@ class TerminalSession extends ChangeNotifier {
   void updateLineWrapMode(bool lineWrap) {
     if (_lineWrap == lineWrap) return;
     _lineWrap = lineWrap;
+    _sendResize(terminal.viewWidth, terminal.viewHeight);
+  }
+
+  void updateColumnWidth(int fixedCols) {
+    if (_fixedCols == fixedCols) return;
+    _fixedCols = fixedCols;
     _sendResize(terminal.viewWidth, terminal.viewHeight);
   }
 
@@ -155,13 +164,13 @@ class TerminalSession extends ChangeNotifier {
   }
 
   void _sendResize(int cols, int rows) {
-    final visibleCols = _lineWrap ? cols : kHorizontalScrollCols;
     _send({
       't': 'resize',
       'c': remoteColsFor(
         shell: session.shell,
         lineWrap: _lineWrap,
-        visibleCols: visibleCols,
+        visibleCols: cols,
+        fixedCols: _fixedCols,
       ),
       'r': rows,
     });

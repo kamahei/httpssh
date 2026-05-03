@@ -1,3 +1,7 @@
+/// Default fallback for [remoteColsFor]'s `fixedCols` argument and for
+/// callers that have no access to the user's configured column width.
+/// The user-configurable value lives in `state/settings.dart`
+/// (`TerminalColumnsNotifier`); pass it in via `fixedCols`.
 const int kHorizontalScrollCols = 120;
 
 bool isPowerShellShell(String shell) {
@@ -9,16 +13,24 @@ bool isPowerShellShell(String shell) {
   return name == 'pwsh' || name == 'powershell';
 }
 
+/// Compute the cols value to send to the relay PTY.
+///
+/// * In wrap mode the remote width matches [visibleCols], except when
+///   the shell is PowerShell — there we keep at least [fixedCols] so
+///   PSReadLine has a wide enough console to format wide output.
+/// * In scroll mode the remote width is pinned to [fixedCols] regardless
+///   of the visible viewport.
 int remoteColsFor({
   required String shell,
   required bool lineWrap,
   required int visibleCols,
+  required int fixedCols,
 }) {
   final cols = visibleCols.clamp(1, 500).toInt();
-  // PowerShell formats and truncates some output at the console width.
-  // Keep its remote PTY wide enough while xterm.dart still wraps locally.
-  if (lineWrap && isPowerShellShell(shell)) {
-    return cols < kHorizontalScrollCols ? kHorizontalScrollCols : cols;
+  final pinned = fixedCols.clamp(1, 500).toInt();
+  if (!lineWrap) return pinned;
+  if (isPowerShellShell(shell)) {
+    return cols < pinned ? pinned : cols;
   }
   return cols;
 }

@@ -34,12 +34,22 @@ class TerminalWorkspace extends ConsumerStatefulWidget {
 }
 
 class _TabModel {
-  _TabModel({required this.session, required this.terminalSession}) {
+  _TabModel({
+    required this.session,
+    required this.terminalSession,
+    this.lineWrapOverride,
+  }) {
     title = session.title;
   }
 
   SessionInfo session;
   TerminalSession terminalSession;
+
+  /// Per-session line-wrap override. `null` means "follow the global
+  /// [lineWrapProvider]"; `true`/`false` pin this tab to wrap or
+  /// horizontal scroll regardless of the global default.
+  bool? lineWrapOverride;
+
   late String title;
 }
 
@@ -82,14 +92,45 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
         orElse: () => true,
       );
 
+  int _currentFixedCols() => ref.read(terminalColumnsProvider).maybeWhen(
+        data: (v) => v,
+        orElse: () => TerminalColumnsNotifier.defaultColumns,
+      );
+
+  bool? _lineWrapOverrideFor(String sessionId) =>
+      ref.read(sessionLineWrapOverridesProvider).valueOrNull?[sessionId];
+
   _TabModel _makeTab(SessionInfo info) {
+    final override = _lineWrapOverrideFor(info.id);
+    final effective = override ?? _currentLineWrap();
     final ts = TerminalSession(
       api: _api,
       session: info,
-      lineWrap: _currentLineWrap(),
+      lineWrap: effective,
+      fixedCols: _currentFixedCols(),
     );
     ts.addListener(_onTabChanged);
-    return _TabModel(session: info, terminalSession: ts);
+    final tab = _TabModel(
+      session: info,
+      terminalSession: ts,
+      lineWrapOverride: override,
+    );
+    // The override provider is an AsyncNotifier whose first build reads
+    // SharedPreferences. For the very first tab opened in a session, that
+    // load may still be in flight at this point and `_lineWrapOverrideFor`
+    // returned null. Schedule a one-shot sync so a saved override gets
+    // applied as soon as the provider resolves.
+    Future(() async {
+      final map = await ref.read(sessionLineWrapOverridesProvider.future);
+      if (!mounted) return;
+      final saved = map[info.id];
+      if (tab.lineWrapOverride == saved) return;
+      setState(() {
+        tab.lineWrapOverride = saved;
+      });
+      ts.updateLineWrapMode(saved ?? _currentLineWrap());
+    });
+    return tab;
   }
 
   void _onTabChanged() {
@@ -160,14 +201,14 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
             data: (v) => v,
             orElse: () => true,
           );
+      final fixedCols = _currentFixedCols();
       final dims = estimateViewportCells(context, fontSize: fontSize);
-      final cols = lineWrap
-          ? remoteColsFor(
-              shell: shell,
-              lineWrap: true,
-              visibleCols: dims.cols,
-            )
-          : kHorizontalScrollCols;
+      final cols = remoteColsFor(
+        shell: shell,
+        lineWrap: lineWrap,
+        visibleCols: dims.cols,
+        fixedCols: fixedCols,
+      );
       final info = await _api.createSession(
         shell: shell,
         cols: cols,
@@ -259,6 +300,25 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
       if (_active >= _tabs.length) _active = _tabs.length - 1;
       if (idx < _active) _active--;
     });
+  }
+
+  Future<void> _toggleLineWrapForActive() async {
+    if (_tabs.isEmpty) return;
+    final tab = _tabs[_active];
+    final globalWrap = _currentLineWrap();
+    final current = tab.lineWrapOverride ?? globalWrap;
+    final next = !current;
+    // Collapse the override when the toggled value matches the global
+    // default again — keeps SharedPreferences from accumulating entries
+    // that say "follow the global", which is the implicit default anyway.
+    final newOverride = next == globalWrap ? null : next;
+    setState(() {
+      tab.lineWrapOverride = newOverride;
+    });
+    tab.terminalSession.updateLineWrapMode(next);
+    await ref
+        .read(sessionLineWrapOverridesProvider.notifier)
+        .setOverride(tab.session.id, newOverride);
   }
 
   Future<void> _openFilesAtCwd() async {
@@ -372,8 +432,14 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
           data: (v) => v,
           orElse: () => true,
         );
+    final fixedCols = ref.watch(terminalColumnsProvider).maybeWhen(
+          data: (v) => v,
+          orElse: () => TerminalColumnsNotifier.defaultColumns,
+        );
     for (final tab in _tabs) {
-      tab.terminalSession.updateLineWrapMode(lineWrap);
+      final effective = tab.lineWrapOverride ?? lineWrap;
+      tab.terminalSession.updateLineWrapMode(effective);
+      tab.terminalSession.updateColumnWidth(fixedCols);
     }
     final stateLabel = switch (active.terminalSession.state) {
       TerminalConnectionState.connecting => t.terminalReconnecting,
@@ -391,6 +457,17 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
           : AppBar(
               title: Text(active.title),
               actions: [
+                IconButton(
+                  icon: Icon(
+                    (active.lineWrapOverride ?? lineWrap)
+                        ? Icons.wrap_text
+                        : Icons.swap_horiz,
+                  ),
+                  tooltip: (active.lineWrapOverride ?? lineWrap)
+                      ? t.terminalToggleLineWrapToScroll
+                      : t.terminalToggleLineWrapToWrap,
+                  onPressed: _toggleLineWrapForActive,
+                ),
                 IconButton(
                   icon: const Icon(Icons.folder_open_outlined),
                   tooltip: t.terminalOpenFilesAtCwd,
@@ -451,7 +528,8 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
                       terminal: tab.terminalSession.terminal,
                       theme: palette.theme,
                       fontSize: fontSize,
-                      lineWrap: lineWrap,
+                      lineWrap: tab.lineWrapOverride ?? lineWrap,
+                      fixedCols: fixedCols,
                     ),
                 ],
               ),
@@ -638,12 +716,14 @@ class _TerminalBody extends StatelessWidget {
     required this.theme,
     required this.fontSize,
     required this.lineWrap,
+    required this.fixedCols,
   });
 
   final Terminal terminal;
   final TerminalTheme theme;
   final double fontSize;
   final bool lineWrap;
+  final int fixedCols;
 
   @override
   Widget build(BuildContext context) {
@@ -664,23 +744,23 @@ class _TerminalBody extends StatelessWidget {
       );
     }
 
-    // Scroll mode: pin the terminal width at kHorizontalScrollCols.
-    // We disable xterm's autoResize and call terminal.resize(...)
-    // ourselves so that the column count is independent of how wide
-    // the host happens to render each cell — without this, xterm's
-    // own measurement chooses a column count from the SizedBox width
-    // that may differ from kHorizontalScrollCols and the
-    // shell would format output for the "wrong" width.
+    // Scroll mode: pin the terminal width at the user-configured
+    // [fixedCols]. We disable xterm's autoResize and call
+    // terminal.resize(...) ourselves so that the column count is
+    // independent of how wide the host happens to render each cell —
+    // without this, xterm's own measurement chooses a column count
+    // from the SizedBox width that may differ from the configured
+    // value, and the shell would format output for the "wrong" width.
     return LayoutBuilder(
       builder: (context, c) {
         final cellW = fontSize * 0.7; // generous overestimate to avoid clipping
         final cellH = fontSize * 1.2;
-        final width = kHorizontalScrollCols * cellW;
+        final width = fixedCols * cellW;
         final rows = (c.maxHeight / cellH).floor().clamp(5, 200);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (terminal.viewWidth != kHorizontalScrollCols ||
+          if (terminal.viewWidth != fixedCols ||
               terminal.viewHeight != rows) {
-            terminal.resize(kHorizontalScrollCols, rows);
+            terminal.resize(fixedCols, rows);
           }
         });
         return SingleChildScrollView(

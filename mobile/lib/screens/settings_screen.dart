@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../state/settings.dart';
-import '../terminal/resize_policy.dart';
 import '../terminal/themes.dart'
     show terminalPalettes, paletteById, TerminalPaletteId;
 
@@ -32,6 +31,7 @@ class SettingsScreen extends ConsumerWidget {
     final paletteAsync = ref.watch(terminalPaletteProvider);
     final fontAsync = ref.watch(terminalFontSizeProvider);
     final wrapAsync = ref.watch(lineWrapProvider);
+    final colsAsync = ref.watch(terminalColumnsProvider);
     final timeoutAsync = ref.watch(sessionIdleTimeoutProvider);
 
     return Scaffold(
@@ -68,48 +68,113 @@ class SettingsScreen extends ConsumerWidget {
           wrapAsync.when(
             loading: () => const ListTile(title: Text('...')),
             error: (e, _) => ListTile(title: Text('$e')),
-            data: (wrap) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: Text(
-                    t.settingsLineWrap,
-                    style: Theme.of(context).textTheme.bodyMedium,
+            data: (wrap) {
+              final hintCols = colsAsync.maybeWhen(
+                data: (v) => v,
+                orElse: () => TerminalColumnsNotifier.defaultColumns,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text(
+                      t.settingsLineWrap,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: SegmentedButton<bool>(
-                    segments: [
-                      ButtonSegment(
-                        value: true,
-                        icon: const Icon(Icons.wrap_text),
-                        label: Text(t.settingsLineWrapWrap),
-                      ),
-                      ButtonSegment(
-                        value: false,
-                        icon: const Icon(Icons.swap_horiz),
-                        label: Text(t.settingsLineWrapScroll),
-                      ),
-                    ],
-                    selected: {wrap},
-                    onSelectionChanged: (s) =>
-                        ref.read(lineWrapProvider.notifier).set(s.first),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: Text(
-                    t.settingsLineWrapHint(kHorizontalScrollCols),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.outline,
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: SegmentedButton<bool>(
+                      segments: [
+                        ButtonSegment(
+                          value: true,
+                          icon: const Icon(Icons.wrap_text),
+                          label: Text(t.settingsLineWrapWrap),
                         ),
+                        ButtonSegment(
+                          value: false,
+                          icon: const Icon(Icons.swap_horiz),
+                          label: Text(t.settingsLineWrapScroll),
+                        ),
+                      ],
+                      selected: {wrap},
+                      onSelectionChanged: (s) =>
+                          ref.read(lineWrapProvider.notifier).set(s.first),
+                    ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Text(
+                      t.settingsLineWrapHint(hintCols),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          colsAsync.when(
+            loading: () => const ListTile(title: Text('...')),
+            error: (e, _) => ListTile(title: Text('$e')),
+            data: (cols) {
+              const minCols = TerminalColumnsNotifier.minColumns;
+              const maxCols = TerminalColumnsNotifier.maxColumns;
+              const step = TerminalColumnsNotifier.step;
+              const divisions = (maxCols - minCols) ~/ step;
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.settingsTerminalColumns,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: cols.toDouble(),
+                            min: minCols.toDouble(),
+                            max: maxCols.toDouble(),
+                            divisions: divisions,
+                            label: cols.toString(),
+                            onChanged: (v) {
+                              final snapped =
+                                  (v / step).round() * step;
+                              ref
+                                  .read(terminalColumnsProvider.notifier)
+                                  .set(snapped);
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 40,
+                          child: Text(
+                            cols.toString(),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 4),
+                      child: Text(
+                        t.settingsTerminalColumnsHint,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
           fontAsync.when(
             loading: () => const ListTile(title: Text('...')),

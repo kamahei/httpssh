@@ -41,9 +41,18 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
   }
 
   void _refresh() {
+    final fut = _api.listSessions();
     setState(() {
-      _future = _api.listSessions();
+      _future = fut;
     });
+    fut.then((list) {
+      if (!mounted) return;
+      // Killed sessions should not leave orphan per-session line-wrap
+      // overrides behind in SharedPreferences.
+      ref.read(sessionLineWrapOverridesProvider.notifier).pruneTo(
+            list.map((s) => s.id).toSet(),
+          );
+    }).catchError((_) {/* surfaced via FutureBuilder */});
   }
 
   Future<void> _create() async {
@@ -80,6 +89,10 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
             data: (v) => v,
             orElse: () => true,
           );
+      final fixedCols = ref.read(terminalColumnsProvider).maybeWhen(
+            data: (v) => v,
+            orElse: () => TerminalColumnsNotifier.defaultColumns,
+          );
       final idleTimeout = ref.read(sessionIdleTimeoutProvider).maybeWhen(
             data: (v) => v,
             orElse: () => SessionIdleTimeoutNotifier.defaultSeconds,
@@ -88,13 +101,12 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
       // Pre-size the ConPTY to the same remote width policy used after
       // attach. PowerShell can cache WindowWidth at startup, so a narrow
       // initial size can permanently truncate formatted output.
-      final cols = lineWrap
-          ? remoteColsFor(
-              shell: shell,
-              lineWrap: true,
-              visibleCols: dims.cols,
-            )
-          : kHorizontalScrollCols;
+      final cols = remoteColsFor(
+        shell: shell,
+        lineWrap: lineWrap,
+        visibleCols: dims.cols,
+        fixedCols: fixedCols,
+      );
       final created = await _api.createSession(
         shell: shell,
         cols: cols,
