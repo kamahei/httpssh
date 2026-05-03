@@ -187,6 +187,7 @@
     const tab = {
       id, title, term, fit, host,
       ws: null, retryAttempt: 0, retryTimer: null, closing: false,
+      wsGen: 0,
       el: null, dot: null,
     };
 
@@ -234,10 +235,12 @@
     const url = proto + "//" + location.host + "/api/sessions/" + tab.id + "/io" + (params.toString() ? "?" + params : "");
 
     const ws = new WebSocket(url, ["httpssh.v1"]);
+    const myGen = ++tab.wsGen;
     tab.ws = ws;
     tab.closing = false;
 
     ws.addEventListener("open", () => {
+      if (myGen !== tab.wsGen) return;
       tab.retryAttempt = 0;
       setDot(tab, "ok");
       hideBanner();
@@ -245,11 +248,13 @@
     });
 
     ws.addEventListener("message", (ev) => {
+      if (myGen !== tab.wsGen) return;
       let frame;
       try { frame = JSON.parse(ev.data); } catch (_) { return; }
       switch (frame.t) {
         case "replay":
           tab.term.reset();
+          tab.term.clear();
           tab.term.write(frame.d || "");
           break;
         case "out":
@@ -269,6 +274,7 @@
     });
 
     ws.addEventListener("close", () => {
+      if (myGen !== tab.wsGen) return;
       tab.ws = null;
       if (tab.closing) {
         setDot(tab, "closed");
@@ -285,6 +291,11 @@
     });
 
     const pingInterval = setInterval(() => {
+      if (myGen !== tab.wsGen) {
+        clearInterval(pingInterval);
+        try { ws.close(); } catch (_) {}
+        return;
+      }
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "ping" }));
       else clearInterval(pingInterval);
     }, 20000);
@@ -319,6 +330,7 @@
     const tab = state.tabs.get(id);
     if (!tab) return;
     tab.closing = true;
+    tab.wsGen++;
     if (tab.retryTimer) clearTimeout(tab.retryTimer);
     if (tab.ws) tab.ws.close();
     if (tab.el) tab.el.remove();

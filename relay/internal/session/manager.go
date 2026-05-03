@@ -296,14 +296,8 @@ func (m *Manager) pump(s *Session) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
-			_, _ = s.scrollback.Write(data)
-			s.mu.Lock()
-			s.lastIO = time.Now()
-			s.mu.Unlock()
-			for _, p := range s.cwdTracker.feed(data) {
-				s.setCWD(p)
-			}
-			s.fanout(ServerFrame{T: FrameOut, D: string(data)})
+			cwdPaths := s.cwdTracker.feed(data)
+			s.publishOutput(data, cwdPaths, time.Now())
 		}
 		if err != nil {
 			m.opts.Logger.Info("session pump exit",

@@ -38,7 +38,7 @@ Deployment topology: the relay listens on `127.0.0.1:18822` and is fronted local
   1. App detects WebSocket close, marks the tab "Reconnecting".
   2. Relay keeps the ConPTY process alive and continues writing output into the session's ring buffer.
   3. App reconnects within 30 seconds, opens a fresh WebSocket to `/api/sessions/{id}/io`.
-  4. Relay sends a `replay` frame containing the buffered output since the last point the client acknowledged, then resumes live streaming.
+  4. Relay sends a `replay` frame containing the latest bounded scrollback, then resumes live streaming. The client clears its local terminal before applying the replay.
 - Outcome: Owner sees missed output without losing the running command.
 
 ### Journey 4: Browser/Google OAuth (web client)

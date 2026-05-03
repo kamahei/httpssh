@@ -45,6 +45,7 @@ The relay holds no persistent storage in v1. The "domain entities" below describ
 - Invariants:
   - `0 <= size <= cap`.
   - `Snapshot()` returns a copy (or two slices that the caller concatenates) of the most recent `size` bytes in chronological order.
+- Contents exclude ConPTY resize repaint bursts. Those bytes are not streamed or retained because they redraw already-visible screen contents instead of representing new shell output.
 - Behavior on overflow: oldest bytes are overwritten silently; the replay frame on reconnect therefore reflects "the last `cap` bytes of output" rather than "everything since session start."
 
 ### `Manager`

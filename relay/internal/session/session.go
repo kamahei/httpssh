@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -12,6 +13,7 @@ import (
 const (
 	defaultScrollbackBytes = 4 << 20 // 4 MiB
 	defaultSubscriberQueue = 256
+	resizeRepaintWindow    = 750 * time.Millisecond
 
 	// Bounds for client-requested terminal dimensions.
 	MaxCols uint16 = 500
@@ -38,6 +40,10 @@ type Session struct {
 	exitErr     error
 	doneCh      chan struct{}
 	cwd         string
+	// resizeRepaintUntil suppresses ConPTY's resize-triggered screen repaint.
+	// Those bytes redraw already-visible content, so sending or retaining them
+	// makes reconnects display stale screen copies before the real scrollback.
+	resizeRepaintUntil time.Time
 	// cwdTracker is touched only by the pump goroutine; no mutex.
 	cwdTracker *cwdTracker
 }
@@ -102,6 +108,14 @@ func (s *Session) setCWD(path string) {
 }
 
 // Resize asks the underlying ConPTY to switch dimensions.
+//
+// No-ops silently when the requested size matches what the PTY is already at.
+// This matters because every fresh WebSocket — including the auto-reconnect
+// after a brief network blip — sends an initial resize; if we forwarded that
+// to ConPTY unconditionally the shell would receive a SIGWINCH-equivalent and
+// PSReadLine (and similar prompt-redrawing shells) would emit a fresh prompt
+// into the scrollback. Over repeated reconnects those accumulated prompt
+// redraws are exactly what users see as "past logs duplicated".
 func (s *Session) Resize(cols, rows uint16) error {
 	if cols < 1 || cols > MaxCols || rows < 1 || rows > MaxRows {
 		return ErrInvalidDimensions
@@ -109,9 +123,13 @@ func (s *Session) Resize(cols, rows uint16) error {
 	s.mu.Lock()
 	pty := s.pty
 	closed := s.closed
+	sameSize := s.cols == cols && s.rows == rows
 	s.mu.Unlock()
 	if closed {
 		return ErrSessionClosed
+	}
+	if sameSize {
+		return nil
 	}
 	if err := pty.Resize(cols, rows); err != nil {
 		return err
@@ -119,6 +137,7 @@ func (s *Session) Resize(cols, rows uint16) error {
 	s.mu.Lock()
 	s.cols = cols
 	s.rows = rows
+	s.resizeRepaintUntil = time.Now().Add(resizeRepaintWindow)
 	s.mu.Unlock()
 	return nil
 }
@@ -144,6 +163,65 @@ func (s *Session) WriteInput(p []byte) error {
 // ScrollbackSnapshot returns a copy of the current scrollback bytes.
 func (s *Session) ScrollbackSnapshot() []byte {
 	return s.scrollback.Snapshot()
+}
+
+// publishOutput records one PTY read in scrollback and delivers the matching
+// live frame to the subscribers that were attached before the write became
+// visible. Holding s.mu across both operations gives Subscribe a clean
+// ordering: a reconnecting client receives a chunk either as replay or as
+// live output, never both.
+func (s *Session) publishOutput(data []byte, cwdPaths []string, now time.Time) {
+	frame := ServerFrame{T: FrameOut, D: string(data)}
+	var cancelSubs []*subscriber
+
+	s.mu.Lock()
+	dropFrame := s.suppressResizeRepaintLocked(data, now)
+	if !dropFrame {
+		_, _ = s.scrollback.Write(data)
+	}
+	s.lastIO = now
+	for _, path := range cwdPaths {
+		s.cwd = path
+	}
+	if !dropFrame {
+		for sub := range s.subs {
+			select {
+			case sub.out <- frame:
+			case <-sub.ctx.Done():
+				delete(s.subs, sub)
+				cancelSubs = append(cancelSubs, sub)
+			default:
+				delete(s.subs, sub)
+				cancelSubs = append(cancelSubs, sub)
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	for _, sub := range cancelSubs {
+		sub.cancel()
+	}
+}
+
+func (s *Session) suppressResizeRepaintLocked(data []byte, now time.Time) bool {
+	if s.resizeRepaintUntil.IsZero() {
+		return false
+	}
+	if now.After(s.resizeRepaintUntil) {
+		s.resizeRepaintUntil = time.Time{}
+		return false
+	}
+	return looksLikeConPTYResizeRepaint(data)
+}
+
+func looksLikeConPTYResizeRepaint(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	return bytes.Contains(data, []byte("\x1b[?25l")) &&
+		bytes.Contains(data, []byte("\x1b[H")) &&
+		bytes.Contains(data, []byte("\x1b[?25h")) &&
+		bytes.Count(data, []byte("\x1b[K")) >= 2
 }
 
 // Done returns a channel that is closed after the underlying shell exits or
@@ -205,16 +283,20 @@ func (s *Session) Subscribe(ctx context.Context) (frames <-chan ServerFrame, don
 		cancel()
 		return ch, subCtx.Done(), func() {}
 	}
+	// Snapshot, register, and enqueue the replay frame all under the same
+	// lock publishOutput takes. Without this, a PTY chunk could become
+	// visible in scrollback just before this snapshot and then also be
+	// delivered as live `out` to this new subscriber. The subscriber
+	// channel has 256 slots and is freshly created, so a non-blocking send
+	// always succeeds here.
+	replayData := s.scrollback.Snapshot()
 	s.subs[sub] = struct{}{}
-	s.mu.Unlock()
-
-	// Replay frame is best-effort; if the subscriber is canceled before it
-	// is read, drop on the floor.
-	replay := ServerFrame{T: FrameReplay, D: string(s.scrollback.Snapshot())}
 	select {
-	case ch <- replay:
-	case <-subCtx.Done():
+	case ch <- ServerFrame{T: FrameReplay, D: string(replayData)}:
+	default:
+		// Should never happen on a fresh channel; defensive only.
 	}
+	s.mu.Unlock()
 
 	return ch, subCtx.Done(), func() { s.removeSubscriber(sub) }
 }

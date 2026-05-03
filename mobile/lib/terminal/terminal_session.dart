@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:xterm/xterm.dart';
@@ -23,25 +23,34 @@ class TerminalSession extends ChangeNotifier {
     required this.session,
     required bool lineWrap,
     required int fixedCols,
-  })  : terminal = Terminal(maxLines: 10000),
-        _lineWrap = lineWrap,
+  })  : _lineWrap = lineWrap,
         _fixedCols = fixedCols {
-    terminal.onOutput = _sendInput;
-    terminal.onResize = (cols, rows, _, __) => _sendResize(cols, rows);
+    _terminal = _newTerminal();
     _connect();
   }
 
   final ApiClient api;
   final SessionInfo session;
-  final Terminal terminal;
   bool _lineWrap;
   int _fixedCols;
+  late Terminal _terminal;
+  int _terminalGeneration = 0;
+
+  Terminal get terminal => _terminal;
+
+  int get terminalGeneration => _terminalGeneration;
 
   WebSocketChannel? _channel;
   Timer? _retryTimer;
   Timer? _pingTimer;
   int _retryAttempt = 0;
   bool _disposed = false;
+  bool _connectionReady = false;
+  bool _receivedReplay = false;
+  String? _pendingReplay;
+  final List<String> _pendingOut = <String>[];
+  int? _lastSentCols;
+  int? _lastSentRows;
 
   /// Bumped every time a new WebSocket is opened. Stream callbacks captured
   /// against an older generation must short-circuit so an intentional
@@ -55,52 +64,41 @@ class TerminalSession extends ChangeNotifier {
   String? _lastError;
   String? get lastError => _lastError;
 
+  Terminal _newTerminal({int? cols, int? rows}) {
+    final next = Terminal(maxLines: 10000, reflowEnabled: false);
+    if (cols != null && rows != null) {
+      next.resize(cols, rows);
+    }
+    next.onOutput = _sendInput;
+    next.onResize = (cols, rows, _, __) => _sendResize(cols, rows);
+    return next;
+  }
+
   void updateLineWrapMode(bool lineWrap) {
     if (_lineWrap == lineWrap) return;
     _lineWrap = lineWrap;
-    // Switching wrap mode changes the remote PTY width, which in turn
-    // makes the shell send a SIGWINCH-driven prompt redraw. xterm's
-    // local reflow of the existing buffer composes with that redraw and
-    // produces visible duplicate lines / shifted prompts. Drop the WS
-    // and let the relay's replay rebuild the local buffer at the new
-    // width — the only reliable way to get a clean slate.
-    _hardReconnect('line-wrap mode changed');
+    // A mode toggle changes the remote PTY width, which makes the shell
+    // emit a SIGWINCH-driven prompt redraw. Two things would corrupt the
+    // display if we left the existing buffer untouched:
+    //   1. xterm's local reflow + the shell's redraw compose into
+    //      visible duplicate / shifted lines.
+    //   2. Asking the relay to replay its scrollback (which contains
+    //      absolute cursor-positioning ANSI tied to the OLD width) and
+    //      rendering it at the NEW width misaligns those cursor jumps,
+    //      so historical prompt redraws print on top of each other.
+    // Wiping the local buffer and letting the SIGWINCH redraw paint
+    // into a clean slate avoids both. The relay still has the full
+    // scrollback, so re-attaching from a fresh tab brings history back.
+    terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
+    terminal.buffer.clear();
+    terminal.buffer.setCursor(0, 0);
+    _sendResize(terminal.viewWidth, terminal.viewHeight);
   }
 
   void updateColumnWidth(int fixedCols) {
     if (_fixedCols == fixedCols) return;
     _fixedCols = fixedCols;
     _sendResize(terminal.viewWidth, terminal.viewHeight);
-  }
-
-  /// Tear down the WebSocket and immediately reconnect. The relay's
-  /// `replay` frame on subscribe rebuilds the local buffer from its own
-  /// authoritative scrollback, which is the only reliable way to clear
-  /// reflow / SIGWINCH-redraw artifacts after a mode change.
-  void _hardReconnect(String reason) {
-    if (_disposed) return;
-    _retryTimer?.cancel();
-    _pingTimer?.cancel();
-    _pingTimer = null;
-    // Bumping the generation invalidates the previous listener: any
-    // late onDone/onError callback from the channel we are about to
-    // close will see it no longer owns the active connection and bail,
-    // so we don't double-schedule a reconnect on top of our own
-    // _connect() below.
-    _channelGen++;
-    try {
-      _channel?.sink.close();
-    } catch (_) {}
-    _channel = null;
-    // Pre-clear the local buffer so the user does not see stale content
-    // flash during the brief reconnect window. The replay frame will
-    // rewrite everything once the new WS is up.
-    terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
-    terminal.buffer.clear();
-    terminal.buffer.setCursor(0, 0);
-    _retryAttempt = 0;
-    _setState(TerminalConnectionState.reconnecting, reason);
-    _connect();
   }
 
   void _setState(TerminalConnectionState s, [String? err]) {
@@ -147,8 +145,22 @@ class TerminalSession extends ChangeNotifier {
       return;
     }
     final myGen = ++_channelGen;
+    _connectionReady = false;
+    _receivedReplay = false;
+    _pendingReplay = null;
+    _pendingOut.clear();
     _channel!.stream.listen(
-      _onMessage,
+      (raw) {
+        // After an auto-reconnect (network blip recovered via
+        // _scheduleReconnect), the old channel can still deliver
+        // buffered frames to the dart Stream listener even though we
+        // have closed our end. Without this guard those frames get
+        // written into the terminal AFTER the new connection's replay
+        // has already populated it, producing visible duplicates of the
+        // most recent output.
+        if (myGen != _channelGen) return;
+        _onMessage(raw);
+      },
       onError: (Object e) {
         if (myGen != _channelGen) return;
         _scheduleReconnect('error: $e');
@@ -161,18 +173,6 @@ class TerminalSession extends ChangeNotifier {
       cancelOnError: true,
     );
     _retryAttempt = 0;
-    _setState(TerminalConnectionState.live);
-
-    // 20 s heartbeat keeps Cloudflare and home routers from timing out.
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      _send({'t': 'ping'});
-    });
-
-    // Send an initial resize matching the current xterm dimensions.
-    Future.microtask(() {
-      _sendResize(terminal.viewWidth, terminal.viewHeight);
-    });
   }
 
   void _onMessage(dynamic raw) {
@@ -188,25 +188,48 @@ class TerminalSession extends ChangeNotifier {
     }
     switch (frame['t'] as String?) {
       case 'replay':
-        // Force the local terminal back to a fully clean state before
-        // re-writing scrollback. Plain buffer.clear() does not reset
-        // Terminal-level mode bits like the alt buffer or the saved
-        // cursor; without this aggressive reset, leftover state from
-        // before the reconnect can compose with the replay bytes and
-        // produce visible duplicate lines.
-        //   ESC [ ? 1049 l  exit alt buffer (back to main)
-        //   ESC [ H         home cursor
-        //   ESC [ 2 J       erase visible display
-        //   ESC [ 3 J       erase scrollback
-        terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
-        terminal.buffer.clear();
-        terminal.buffer.setCursor(0, 0);
-        terminal.write((frame['d'] as String?) ?? '');
+        // xterm.dart does not expose a full reset equivalent to xterm.js.
+        // Clearing only the buffer leaves widget-side scroll/selection/cache
+        // state around, which can make full replay appear duplicated after a
+        // reconnect. Replace the terminal object so the next build also
+        // recreates TerminalView's internal controllers.
+        //
+        // Do not write the replay immediately. Reconnects briefly show a
+        // status banner, and switching from connecting -> live changes the
+        // terminal body's height. If replay is written before that layout
+        // settles, xterm's resize path can visually reflow the freshly written
+        // scrollback. Queue it until the remounted TerminalView has completed
+        // its first layout pass at the live size.
+        final old = terminal;
+        old.onOutput = null;
+        old.onResize = null;
+        final next = _newTerminal(cols: old.viewWidth, rows: old.viewHeight);
+        _terminal = next;
+        _terminalGeneration++;
+        _receivedReplay = true;
+        _pendingReplay = (frame['d'] as String?) ?? '';
+        _pendingOut.clear();
+        _connectionReady = false;
+        final replayGeneration = _terminalGeneration;
+        _setState(TerminalConnectionState.live);
+        _schedulePendingReplayApply(replayGeneration);
       case 'out':
-        terminal.write((frame['d'] as String?) ?? '');
+        if (!_receivedReplay) return;
+        final data = (frame['d'] as String?) ?? '';
+        if (!_connectionReady) {
+          _pendingOut.add(data);
+          return;
+        }
+        terminal.write(data);
       case 'exit':
         final code = frame['code'];
-        terminal.write('\r\n[process exited code=$code]\r\n');
+        final message = '\r\n[process exited code=$code]\r\n';
+        if (_receivedReplay && !_connectionReady) {
+          _pendingOut.add(message);
+        } else {
+          terminal.write(message);
+        }
+        _connectionReady = false;
         _setState(TerminalConnectionState.closed);
       case 'pong':
         // no-op
@@ -217,20 +240,59 @@ class TerminalSession extends ChangeNotifier {
     }
   }
 
+  void _schedulePendingReplayApply(int replayGeneration) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyPendingReplay(replayGeneration);
+      });
+    });
+  }
+
+  void _applyPendingReplay(int replayGeneration) {
+    if (_disposed || replayGeneration != _terminalGeneration) return;
+    final replay = _pendingReplay;
+    if (replay == null) return;
+    _pendingReplay = null;
+    terminal.write(replay);
+    for (final data in _pendingOut) {
+      terminal.write(data);
+    }
+    _pendingOut.clear();
+    if (_state != TerminalConnectionState.closed) {
+      _connectionReady = true;
+      _startPing();
+      _sendResize(terminal.viewWidth, terminal.viewHeight);
+    }
+  }
+
+  @visibleForTesting
+  void applyPendingReplayForTesting() {
+    _applyPendingReplay(_terminalGeneration);
+  }
+
   void _sendInput(String data) {
+    if (!_connectionReady) return;
     _send({'t': 'in', 'd': data});
   }
 
   void _sendResize(int cols, int rows) {
-    _send({
-      't': 'resize',
-      'c': remoteColsFor(
-        shell: session.shell,
-        lineWrap: _lineWrap,
-        visibleCols: cols,
-        fixedCols: _fixedCols,
-      ),
-      'r': rows,
+    if (!_connectionReady) return;
+    final remoteCols = remoteColsFor(
+      shell: session.shell,
+      lineWrap: _lineWrap,
+      visibleCols: cols,
+      fixedCols: _fixedCols,
+    );
+    if (_lastSentCols == remoteCols && _lastSentRows == rows) return;
+    _lastSentCols = remoteCols;
+    _lastSentRows = rows;
+    _send({'t': 'resize', 'c': remoteCols, 'r': rows});
+  }
+
+  void _startPing() {
+    _pingTimer?.cancel();
+    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (_connectionReady) _send({'t': 'ping'});
     });
   }
 
@@ -246,6 +308,11 @@ class TerminalSession extends ChangeNotifier {
 
   void _scheduleReconnect(String reason) {
     if (_disposed || _state == TerminalConnectionState.closed) return;
+    _channelGen++;
+    _connectionReady = false;
+    _receivedReplay = false;
+    _pendingReplay = null;
+    _pendingOut.clear();
     _pingTimer?.cancel();
     _pingTimer = null;
     try {
@@ -266,6 +333,11 @@ class TerminalSession extends ChangeNotifier {
   /// Fully close the session locally. The server-side session remains
   /// alive (this is the deliberate "detach" behavior).
   void disposeChannel({bool markClosed = true}) {
+    _channelGen++;
+    _connectionReady = false;
+    _receivedReplay = false;
+    _pendingReplay = null;
+    _pendingOut.clear();
     _retryTimer?.cancel();
     _pingTimer?.cancel();
     try {

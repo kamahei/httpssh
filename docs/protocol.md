@@ -78,6 +78,8 @@ Inform the relay of new terminal dimensions.
 
 Validation: `1 ≤ c ≤ 500`, `1 ≤ r ≤ 200`. Out-of-range requests are rejected with an `error` frame and ignored.
 
+ConPTY may emit a full-screen repaint as a side effect of a resize. The relay suppresses those repaint bursts from both live `out` delivery and replay scrollback because they redraw already-visible screen contents rather than new shell output.
+
 #### `ping`
 
 Heartbeat. The relay replies with `pong`. Clients should send `ping` every 20 seconds while idle to keep CDN intermediaries from closing the WebSocket.

@@ -19,6 +19,7 @@ type fakePTY struct {
 	readCh   chan []byte
 	writes   [][]byte
 	cols, rs uint16
+	resizes  int
 }
 
 func newFakePTY() *fakePTY {
@@ -55,6 +56,7 @@ func (p *fakePTY) Resize(c, r uint16) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.cols, p.rs = c, r
+	p.resizes++
 	return nil
 }
 
@@ -297,6 +299,103 @@ func TestSession_ResizeUpdatesPTYAndDimensions(t *testing.T) {
 	}
 }
 
+func TestSession_ResizeSkipsUnchangedDimensions(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	pty := s.pty.(*fakePTY)
+
+	if err := s.Resize(80, 24); err != nil {
+		t.Fatalf("same-size resize: %v", err)
+	}
+	pty.mu.Lock()
+	resizes := pty.resizes
+	pty.mu.Unlock()
+	if resizes != 0 {
+		t.Fatalf("same-size resize called PTY %d times, want 0", resizes)
+	}
+
+	if err := s.Resize(120, 40); err != nil {
+		t.Fatalf("different-size resize: %v", err)
+	}
+	if err := s.Resize(120, 40); err != nil {
+		t.Fatalf("second same-size resize: %v", err)
+	}
+	pty.mu.Lock()
+	resizes = pty.resizes
+	pty.mu.Unlock()
+	if resizes != 1 {
+		t.Fatalf("resize call count=%d want 1", resizes)
+	}
+}
+
+func TestSession_ResizeRepaintIsDropped(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	frames, _, unsub := s.Subscribe(context.Background())
+	defer unsub()
+	<-frames // initial replay
+
+	if err := s.Resize(81, 24); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	repaint := "\x1b[?25l\x1b[HLINE1\x1b[K\r\nLINE2\x1b[K\x1b[2;6H\x1b[?25h"
+	s.publishOutput([]byte(repaint), nil, time.Now())
+
+	select {
+	case f := <-frames:
+		t.Fatalf("resize repaint was sent live: %+v", f)
+	default:
+	}
+
+	nextFrames, _, nextUnsub := s.Subscribe(context.Background())
+	defer nextUnsub()
+	select {
+	case f := <-nextFrames:
+		if f.T != FrameReplay {
+			t.Fatalf("next first frame t=%q want %q", f.T, FrameReplay)
+		}
+		if f.D != "" {
+			t.Fatalf("resize repaint was stored in replay: %q", f.D)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive replay frame")
+	}
+}
+
+func TestSession_ResizeWindowStoresNormalOutput(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if err := s.Resize(81, 24); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	s.publishOutput([]byte("new command output\r\n"), nil, time.Now())
+
+	frames, _, unsub := s.Subscribe(context.Background())
+	defer unsub()
+	select {
+	case f := <-frames:
+		if f.T != FrameReplay {
+			t.Fatalf("first frame t=%q want %q", f.T, FrameReplay)
+		}
+		if f.D != "new command output\r\n" {
+			t.Fatalf("replay d=%q want normal output", f.D)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive replay frame")
+	}
+}
+
 func TestSession_ResizeRejectsBounds(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
 	s, err := m.Create("pwsh", 80, 24, "", -1)
@@ -314,6 +413,36 @@ func TestSession_ResizeRejectsBounds(t *testing.T) {
 	}
 	if err := s.Resize(80, MaxRows+1); err != ErrInvalidDimensions {
 		t.Fatalf("rows too big: err=%v want ErrInvalidDimensions", err)
+	}
+}
+
+func TestSession_OutputBeforeSubscribeIsReplayOnly(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	s.publishOutput([]byte("history"), nil, time.Now())
+
+	frames, _, unsub := s.Subscribe(context.Background())
+	defer unsub()
+
+	select {
+	case f := <-frames:
+		if f.T != FrameReplay {
+			t.Fatalf("first frame t=%q want %q", f.T, FrameReplay)
+		}
+		if f.D != "history" {
+			t.Fatalf("replay d=%q want history", f.D)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("did not receive replay frame")
+	}
+	select {
+	case f := <-frames:
+		t.Fatalf("unexpected extra frame after replay: %+v", f)
+	default:
 	}
 }
 

@@ -524,7 +524,9 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
                 children: [
                   for (final tab in _tabs)
                     _TerminalBody(
-                      key: ValueKey('body-${tab.session.id}'),
+                      key: ValueKey(
+                        'body-${tab.session.id}-${tab.terminalSession.terminalGeneration}',
+                      ),
                       terminal: tab.terminalSession.terminal,
                       theme: palette.theme,
                       fontSize: fontSize,
@@ -758,8 +760,7 @@ class _TerminalBody extends StatelessWidget {
         final width = fixedCols * cellW;
         final rows = (c.maxHeight / cellH).floor().clamp(5, 200);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (terminal.viewWidth != fixedCols ||
-              terminal.viewHeight != rows) {
+          if (terminal.viewWidth != fixedCols || terminal.viewHeight != rows) {
             terminal.resize(fixedCols, rows);
           }
         });
