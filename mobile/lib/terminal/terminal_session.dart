@@ -77,21 +77,13 @@ class TerminalSession extends ChangeNotifier {
   void updateLineWrapMode(bool lineWrap) {
     if (_lineWrap == lineWrap) return;
     _lineWrap = lineWrap;
-    // A mode toggle changes the remote PTY width, which makes the shell
-    // emit a SIGWINCH-driven prompt redraw. Two things would corrupt the
-    // display if we left the existing buffer untouched:
-    //   1. xterm's local reflow + the shell's redraw compose into
-    //      visible duplicate / shifted lines.
-    //   2. Asking the relay to replay its scrollback (which contains
-    //      absolute cursor-positioning ANSI tied to the OLD width) and
-    //      rendering it at the NEW width misaligns those cursor jumps,
-    //      so historical prompt redraws print on top of each other.
-    // Wiping the local buffer and letting the SIGWINCH redraw paint
-    // into a clean slate avoids both. The relay still has the full
-    // scrollback, so re-attaching from a fresh tab brings history back.
-    terminal.write('\x1b[?1049l\x1b[H\x1b[2J\x1b[3J');
-    terminal.buffer.clear();
-    terminal.buffer.setCursor(0, 0);
+    // Forward the new width to the relay PTY. The shell will issue a
+    // SIGWINCH-driven prompt redraw at the current cursor row, so the
+    // cursor stays where the user was working. We deliberately keep
+    // the local xterm buffer intact so historical scrollback remains
+    // visible across the toggle; xterm is created with reflowEnabled
+    // false (see _newTerminal) so the width change does not retroactively
+    // reformat existing lines.
     _sendResize(terminal.viewWidth, terminal.viewHeight);
   }
 
