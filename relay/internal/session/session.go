@@ -64,6 +64,7 @@ type SessionInfo struct {
 	CreatedAt          time.Time `json:"createdAt"`
 	LastIO             time.Time `json:"lastIo"`
 	Subscribers        int       `json:"subscribers"`
+	HostAttached       bool      `json:"hostAttached"`
 	CWD                string    `json:"cwd,omitempty"`
 	IdleTimeoutSeconds int64     `json:"idleTimeoutSeconds"`
 }
@@ -72,6 +73,13 @@ type SessionInfo struct {
 func (s *Session) Info() SessionInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	host := false
+	for sub := range s.subs {
+		if sub.role == SubscriberRoleHost {
+			host = true
+			break
+		}
+	}
 	return SessionInfo{
 		ID:                 s.ID,
 		Title:              s.Title,
@@ -81,6 +89,7 @@ func (s *Session) Info() SessionInfo {
 		CreatedAt:          s.CreatedAt,
 		LastIO:             s.lastIO,
 		Subscribers:        len(s.subs),
+		HostAttached:       host,
 		CWD:                s.cwd,
 		IdleTimeoutSeconds: int64(s.idleTimeout / time.Second),
 	}
@@ -251,6 +260,20 @@ func (s *Session) Kill() error {
 
 // --- Subscribers ---
 
+// SubscriberRole tags a subscriber so that session metadata can surface
+// "the host PC is currently attached" to mobile clients (used by the
+// `httpssh-relay attach` command). An empty role is the default and is
+// treated as a regular viewer.
+type SubscriberRole string
+
+const (
+	// SubscriberRoleHost marks the PC-side local attach client. At most
+	// one such subscriber per session is meaningful, but the session
+	// model does not enforce uniqueness — extra hosts are accepted as
+	// regular viewers from the relay's perspective.
+	SubscriberRoleHost SubscriberRole = "host"
+)
+
 // subscriber is the internal record of a live attached client. The out
 // channel is never closed by the session: it becomes garbage once the
 // websocket writer goroutine notices ctx.Done() and returns. This avoids
@@ -260,6 +283,7 @@ type subscriber struct {
 	out    chan ServerFrame
 	ctx    context.Context
 	cancel context.CancelFunc
+	role   SubscriberRole
 }
 
 // Done returns a channel that closes when the subscription should end.
@@ -272,10 +296,14 @@ func (sub *subscriber) Done() <-chan struct{} { return sub.ctx.Done() }
 // session ends). Callers MUST select on `done` and stop reading from the
 // frame channel once it fires; reads from the channel after `done` may
 // block forever.
-func (s *Session) Subscribe(ctx context.Context) (frames <-chan ServerFrame, done <-chan struct{}, unsubscribe func()) {
+//
+// role tags the subscriber for SessionInfo.HostAttached. Pass
+// SubscriberRoleHost for the PC-side `httpssh-relay attach` client; pass
+// the empty string for ordinary viewers (e.g. the mobile app).
+func (s *Session) Subscribe(ctx context.Context, role SubscriberRole) (frames <-chan ServerFrame, done <-chan struct{}, unsubscribe func()) {
 	ch := make(chan ServerFrame, defaultSubscriberQueue)
 	subCtx, cancel := context.WithCancel(ctx)
-	sub := &subscriber{out: ch, ctx: subCtx, cancel: cancel}
+	sub := &subscriber{out: ch, ctx: subCtx, cancel: cancel, role: role}
 
 	s.mu.Lock()
 	if s.closed {

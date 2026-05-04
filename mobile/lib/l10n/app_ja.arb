@@ -79,6 +79,8 @@
   "sessionShellPowerShell": "Windows PowerShell",
   "sessionShellCmd": "コマンドプロンプト (cmd)",
   "sessionListMeta": "{cols}x{rows}・{subscribers} 接続",
+  "sessionListHostAttached": "ホスト接続中",
+  "sessionListHostAttachedTooltip": "このセッションには PC 側で `httpssh-relay attach` が動いています。",
   "sessionKill": "セッション終了",
   "sessionRename": "名前を変更",
   "sessionKillConfirm": "セッション「{title}」を終了しますか？",

@@ -90,6 +90,8 @@
   "sessionShellCmd": "Command Prompt (cmd)",
   "sessionListMeta": "{cols}x{rows} - {subscribers} subscriber(s)",
   "@sessionListMeta": {"placeholders": {"cols": {}, "rows": {}, "subscribers": {}}},
+  "sessionListHostAttached": "Host attached",
+  "sessionListHostAttachedTooltip": "A PC has run `httpssh-relay attach` against this session.",
   "sessionKill": "Kill session",
   "sessionRename": "Rename",
   "sessionKillConfirm": "Kill session {title}?",

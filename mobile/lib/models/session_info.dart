@@ -9,6 +9,7 @@ class SessionInfo {
     required this.createdAt,
     required this.lastIo,
     required this.subscribers,
+    this.hostAttached = false,
     this.cwd = '',
     this.idleTimeoutSeconds = 0,
   });
@@ -24,6 +25,7 @@ class SessionInfo {
         lastIo: DateTime.tryParse(json['lastIo'] as String? ?? '') ??
             DateTime.now(),
         subscribers: (json['subscribers'] as num?)?.toInt() ?? 0,
+        hostAttached: json['hostAttached'] as bool? ?? false,
         cwd: json['cwd'] as String? ?? '',
         idleTimeoutSeconds:
             (json['idleTimeoutSeconds'] as num?)?.toInt() ?? 0,
@@ -37,6 +39,12 @@ class SessionInfo {
   final DateTime createdAt;
   final DateTime lastIo;
   final int subscribers;
+
+  /// True when at least one currently-attached subscriber connected
+  /// with `?role=host` (i.e. the PC-side `httpssh-relay attach`
+  /// command). Mobile uses this to surface "host is attached" in the
+  /// session picker.
+  final bool hostAttached;
 
   /// Last working directory reported by the shell prompt via OSC 9;9.
   /// Empty until the shell emits its first prompt or when the shell is

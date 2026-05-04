@@ -45,7 +45,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_ = c.CloseNow()
 	}()
 
-	subCh, subDone, unsubscribe := sess.Subscribe(ctx)
+	role := session.SubscriberRole("")
+	if r.URL.Query().Get("role") == string(session.SubscriberRoleHost) {
+		role = session.SubscriberRoleHost
+	}
+	subCh, subDone, unsubscribe := sess.Subscribe(ctx, role)
 	defer unsubscribe()
 
 	// Writer goroutine: drain subCh into the WS.

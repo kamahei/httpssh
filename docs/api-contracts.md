@@ -44,6 +44,7 @@ Content-Type: application/json
       "createdAt": "2026-04-29T14:01:02Z",
       "lastIo": "2026-04-29T14:05:11Z",
       "subscribers": 1,
+      "hostAttached": true,
       "cwd": "C:\\Users\\Owner\\projects\\httpssh",
       "idleTimeoutSeconds": 86400
     }
@@ -61,6 +62,11 @@ kills a session that has had zero subscribers and no I/O for this many
 seconds. `0` means "never expire" (the session lives until the shell
 exits or it is explicitly deleted). Omitting the field at create time
 falls back to the relay's `session.idle_timeout` default.
+
+`hostAttached` is `true` when at least one currently-connected
+WebSocket subscriber upgraded with `?role=host` (used by the
+`httpssh-relay attach` command on the PC side). Mobile and web clients
+use this to surface "host PC is attached" in their session pickers.
 
 ### `GET /api/sessions/{id}`
 

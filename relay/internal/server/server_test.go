@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"httpssh/relay/internal/auth"
 	"httpssh/relay/internal/conpty"
 	"httpssh/relay/internal/fileapi"
@@ -532,5 +534,66 @@ func TestServer_WebSocketRefusesWithoutSubprotocol(t *testing.T) {
 
 	if resp.StatusCode == http.StatusSwitchingProtocols && resp.Header.Get("Sec-WebSocket-Protocol") == "httpssh.v1" {
 		t.Fatalf("server negotiated httpssh.v1 even though client did not request it")
+	}
+}
+
+func TestServer_WebSocketRoleHostFlipsHostAttached(t *testing.T) {
+	srv, mgr := newTestServer(t)
+	s, err := mgr.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	wsURL := "ws" + ts.URL[len("http"):] + "/api/sessions/" + s.ID + "/io?token=test-bearer-32-chars-or-longer-12345&role=host"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	c, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{Subprotocols: []string{"httpssh.v1"}})
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.CloseNow()
+
+	// Wait until the subscriber registers (Subscribe takes s.mu briefly).
+	deadline := time.Now().Add(2 * time.Second)
+	var info session.SessionInfo
+	for time.Now().Before(deadline) {
+		info = s.Info()
+		if info.HostAttached {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !info.HostAttached {
+		t.Fatalf("HostAttached=false after dialing with role=host")
+	}
+
+	// A second WS without role=host must not flip it back, and must not
+	// turn it true on its own.
+	wsURLNoRole := "ws" + ts.URL[len("http"):] + "/api/sessions/" + s.ID + "/io?token=test-bearer-32-chars-or-longer-12345"
+	c2, _, err := websocket.Dial(ctx, wsURLNoRole, &websocket.DialOptions{Subprotocols: []string{"httpssh.v1"}})
+	if err != nil {
+		t.Fatalf("dial2: %v", err)
+	}
+	defer c2.CloseNow()
+	if !s.Info().HostAttached {
+		t.Fatalf("HostAttached flipped to false after a viewer attached")
+	}
+
+	// Closing the host connection drops HostAttached back to false.
+	_ = c.Close(websocket.StatusNormalClosure, "")
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !s.Info().HostAttached {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s.Info().HostAttached {
+		t.Fatalf("HostAttached still true after host websocket closed")
 	}
 }

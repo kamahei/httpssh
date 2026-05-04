@@ -25,6 +25,20 @@ import (
 var version = "0.0.0-dev"
 
 func main() {
+	// Subcommand dispatch: `httpssh-relay attach ...` runs the PC-side
+	// local attach client instead of the relay server. Detect the
+	// subcommand before touching the global flag set so attach can use
+	// its own FlagSet.
+	if len(os.Args) > 1 && os.Args[1] == "attach" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runAttach(ctx, os.Args[2:]); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	configPath := flag.String("config", "", "path to config.yaml (overrides default values; flags override config)")
 	addr := flag.String("listen", "", "host:port to listen on (overrides config)")
 	bearer := flag.String("bearer", "", "LAN bearer token (overrides config). When empty and config has no bearer, a random token is generated and printed")

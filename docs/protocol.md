@@ -6,6 +6,11 @@ The WebSocket endpoint at `/api/sessions/{id}/io` carries terminal I/O between c
 
 Client requests `Sec-WebSocket-Protocol: httpssh.v1`. Relay must echo `httpssh.v1` in the upgrade response. If the client does not request this subprotocol, the current relay accepts the upgrade without a negotiated subprotocol and then closes it with policy violation code `1008`.
 
+## Query Parameters
+
+- `token=<bearer>` — required when the relay is configured with a LAN bearer. Equivalent to `Authorization: Bearer <bearer>` on REST calls.
+- `role=host` — optional. When present, the subscriber is tagged as the PC-side host (used by the `httpssh-relay attach` command). The session's `hostAttached` field flips to `true` for the lifetime of this WebSocket. Any other value is treated as an unset role (regular viewer). The relay does not enforce uniqueness; multiple host-tagged subscribers are accepted but only the presence of at least one matters for `hostAttached`.
+
 ## Frame Types
 
 ### Server → Client

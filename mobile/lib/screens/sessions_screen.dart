@@ -195,7 +195,15 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
           if (snap.hasError) {
             return Center(child: Text('${snap.error}'));
           }
-          final list = snap.data ?? const <SessionInfo>[];
+          final raw = snap.data ?? const <SessionInfo>[];
+          // Surface host-attached sessions first so users instantly see
+          // the one their PC is currently driving.
+          final list = [...raw]..sort((a, b) {
+              if (a.hostAttached != b.hostAttached) {
+                return a.hostAttached ? -1 : 1;
+              }
+              return b.lastIo.compareTo(a.lastIo);
+            });
           if (list.isEmpty) {
             return Center(
               child: Padding(
@@ -223,9 +231,21 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
             itemBuilder: (_, i) {
               final s = list[i];
               return ListTile(
+                leading: s.hostAttached
+                    ? Tooltip(
+                        message: t.sessionListHostAttachedTooltip,
+                        child: Icon(
+                          Icons.computer,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      )
+                    : null,
                 title: Text(s.title),
-                subtitle:
-                    Text(t.sessionListMeta(s.cols, s.rows, s.subscribers)),
+                subtitle: Text(
+                  s.hostAttached
+                      ? '${t.sessionListMeta(s.cols, s.rows, s.subscribers)} · ${t.sessionListHostAttached}'
+                      : t.sessionListMeta(s.cols, s.rows, s.subscribers),
+                ),
                 trailing: IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: () => _kill(s),

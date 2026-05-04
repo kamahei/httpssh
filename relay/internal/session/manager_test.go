@@ -234,7 +234,7 @@ func TestManager_Reap_SkipsActiveSessions(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	frames, _, _ := s.Subscribe(context.Background())
+	frames, _, _ := s.Subscribe(context.Background(), "")
 	go func() {
 		for range frames {
 		}
@@ -338,7 +338,7 @@ func TestSession_ResizeRepaintIsDropped(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	frames, _, unsub := s.Subscribe(context.Background())
+	frames, _, unsub := s.Subscribe(context.Background(), "")
 	defer unsub()
 	<-frames // initial replay
 
@@ -354,7 +354,7 @@ func TestSession_ResizeRepaintIsDropped(t *testing.T) {
 	default:
 	}
 
-	nextFrames, _, nextUnsub := s.Subscribe(context.Background())
+	nextFrames, _, nextUnsub := s.Subscribe(context.Background(), "")
 	defer nextUnsub()
 	select {
 	case f := <-nextFrames:
@@ -381,7 +381,7 @@ func TestSession_ResizeWindowStoresNormalOutput(t *testing.T) {
 	}
 	s.publishOutput([]byte("new command output\r\n"), nil, time.Now())
 
-	frames, _, unsub := s.Subscribe(context.Background())
+	frames, _, unsub := s.Subscribe(context.Background(), "")
 	defer unsub()
 	select {
 	case f := <-frames:
@@ -425,7 +425,7 @@ func TestSession_OutputBeforeSubscribeIsReplayOnly(t *testing.T) {
 
 	s.publishOutput([]byte("history"), nil, time.Now())
 
-	frames, _, unsub := s.Subscribe(context.Background())
+	frames, _, unsub := s.Subscribe(context.Background(), "")
 	defer unsub()
 
 	select {
@@ -465,7 +465,7 @@ func TestSession_SubscribeReceivesReplayThenLive(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	frames, _, unsub := s.Subscribe(context.Background())
+	frames, _, unsub := s.Subscribe(context.Background(), "")
 	defer unsub()
 
 	select {
@@ -502,9 +502,9 @@ func TestSession_FanoutToMultipleSubscribers(t *testing.T) {
 	}
 	pty := s.pty.(*fakePTY)
 
-	a, _, unsubA := s.Subscribe(context.Background())
+	a, _, unsubA := s.Subscribe(context.Background(), "")
 	defer unsubA()
-	b, _, unsubB := s.Subscribe(context.Background())
+	b, _, unsubB := s.Subscribe(context.Background(), "")
 	defer unsubB()
 
 	// Drain the initial replay frames.
@@ -539,7 +539,7 @@ func TestSession_UnsubscribeStopsDelivery(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	frames, done, unsub := s.Subscribe(context.Background())
+	frames, done, unsub := s.Subscribe(context.Background(), "")
 	<-frames // replay
 	unsub()
 
@@ -575,7 +575,7 @@ func TestSession_ExitClosesSubscribers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	frames, done, unsub := s.Subscribe(context.Background())
+	frames, done, unsub := s.Subscribe(context.Background(), "")
 	defer unsub()
 	<-frames // replay
 
@@ -600,5 +600,43 @@ func TestSession_ExitClosesSubscribers(t *testing.T) {
 		case <-deadline:
 			t.Fatal("never observed FrameExit / done")
 		}
+	}
+}
+
+func TestSession_HostAttached(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if got := s.Info().HostAttached; got {
+		t.Fatalf("HostAttached=true with no subscribers, want false")
+	}
+
+	viewerFrames, _, unsubViewer := s.Subscribe(context.Background(), "")
+	defer unsubViewer()
+	<-viewerFrames // replay
+	if got := s.Info().HostAttached; got {
+		t.Fatalf("HostAttached=true with only viewer subscriber, want false")
+	}
+
+	hostFrames, _, unsubHost := s.Subscribe(context.Background(), SubscriberRoleHost)
+	<-hostFrames // replay
+	if got := s.Info().HostAttached; !got {
+		t.Fatalf("HostAttached=false after host attach, want true")
+	}
+
+	unsubHost()
+	// removeSubscriber holds s.mu briefly; poll until visible.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if !s.Info().HostAttached {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := s.Info().HostAttached; got {
+		t.Fatalf("HostAttached=true after host unsubscribe, want false")
 	}
 }
