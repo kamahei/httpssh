@@ -143,7 +143,7 @@ The web client is for development, testing, and browser access through Cloudflar
 3. Allow installation from the source you use to open the APK.
 4. Install the APK.
 
-The Android app name shown on the launcher is `httpssh`; its application ID is `com.nekoreset.httpssh`.
+The Android app name shown on the launcher is `httpssh`; its application ID defaults to `com.example.httpssh` and may be overridden per-build (see `mobile/README.md`).
 
 ## Add A LAN Profile
 

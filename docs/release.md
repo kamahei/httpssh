@@ -10,7 +10,7 @@ The workflow builds:
 
 Release tags must look like `v0.1.0` or `v0.1.0-beta.1`.
 
-The default Android application ID and iOS bundle identifier are both `com.nekoreset.httpssh`. GitHub Release APKs use this ID unless overridden by the release workflow environment.
+The default Android application ID and iOS bundle identifier are both `com.example.httpssh` (placeholder for the OSS source). For store releases override these to your own ID — see `mobile/README.md` for the local override mechanism (`android/local.properties` and `ios/Flutter/Local.xcconfig`, both gitignored).
 
 ## Required GitHub Secrets
 

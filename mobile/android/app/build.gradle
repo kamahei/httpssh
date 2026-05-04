@@ -17,7 +17,7 @@ if (localPropertiesFile.exists()) {
     localProperties.load(new FileInputStream(localPropertiesFile))
 }
 
-def defaultApplicationId = "com.nekoreset.httpssh"
+def defaultApplicationId = "com.example.httpssh"
 def configuredApplicationId =
     localProperties.getProperty("httpssh.applicationId", defaultApplicationId)
 
@@ -27,7 +27,7 @@ def hasReleaseSigning = keystoreProperties["storeFile"] &&
     keystoreProperties["keyPassword"]
 
 android {
-    namespace = "com.nekoreset.httpssh"
+    namespace = "com.example.httpssh"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

@@ -1,1 +1,8 @@
 #include "Generated.xcconfig"
+
+// Default bundle identifier for the OSS source. Override locally by
+// creating mobile/ios/Flutter/Local.xcconfig (gitignored) with:
+//     APP_BUNDLE_ID = your.bundle.id
+APP_BUNDLE_ID = com.example.httpssh
+
+#include? "Local.xcconfig"

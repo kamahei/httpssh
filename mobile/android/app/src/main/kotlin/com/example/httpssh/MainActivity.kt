@@ -1,4 +1,4 @@
-package com.nekoreset.httpssh
+package com.example.httpssh
 
 import io.flutter.embedding.android.FlutterActivity
 

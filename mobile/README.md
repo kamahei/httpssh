@@ -2,11 +2,20 @@
 
 Flutter app for Android and iOS. It connects to one or more `httpssh-relay` instances over LAN HTTP+bearer or over Cloudflare Tunnel + Cloudflare Access.
 
-Default Android application ID: `com.nekoreset.httpssh`.
-Default iOS bundle identifier: `com.nekoreset.httpssh`.
+Default Android application ID: `com.example.httpssh`.
+Default iOS bundle identifier: `com.example.httpssh`.
 
-For local/private builds, override the application ID in the ignored
-`android/local.properties` file with `httpssh.applicationId=<your.app.id>`.
+These defaults are placeholders for the OSS source. For your own builds,
+override them in gitignored local files:
+
+- Android: add to `android/local.properties`:
+  ```
+  httpssh.applicationId=<your.app.id>
+  ```
+- iOS: create `ios/Flutter/Local.xcconfig`:
+  ```
+  APP_BUNDLE_ID = <your.app.id>
+  ```
 
 ## Prerequisites
 

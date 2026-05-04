@@ -34,6 +34,7 @@ mobile/ios/Pods/
 mobile/ios/.symlinks/
 mobile/ios/Flutter/Flutter.framework
 mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/Local.xcconfig
 mobile/ios/Flutter/flutter_export_environment.sh
 mobile/ios/Runner/GoogleService-Info.plist
 mobile/lib/l10n/generated/
