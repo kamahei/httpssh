@@ -49,8 +49,15 @@ class TerminalSession extends ChangeNotifier {
   bool _receivedReplay = false;
   String? _pendingReplay;
   final List<String> _pendingOut = <String>[];
+  // Raw replay/out chunks used to rebuild xterm when presentation-only
+  // settings change. xterm stores processed cells, so resizing alone cannot
+  // make old scrollback follow a new wrap/scroll mode.
+  final List<String> _renderHistory = <String>[];
+  int _renderHistoryBytes = 0;
   int? _lastSentCols;
   int? _lastSentRows;
+
+  static const int _renderHistoryLimitBytes = 4 * 1024 * 1024;
 
   /// Bumped every time a new WebSocket is opened. Stream callbacks captured
   /// against an older generation must short-circuit so an intentional
@@ -77,20 +84,17 @@ class TerminalSession extends ChangeNotifier {
   void updateLineWrapMode(bool lineWrap) {
     if (_lineWrap == lineWrap) return;
     _lineWrap = lineWrap;
-    // Forward the new width to the relay PTY. The shell will issue a
-    // SIGWINCH-driven prompt redraw at the current cursor row, so the
-    // cursor stays where the user was working. We deliberately keep
-    // the local xterm buffer intact so historical scrollback remains
-    // visible across the toggle; xterm is created with reflowEnabled
-    // false (see _newTerminal) so the width change does not retroactively
-    // reformat existing lines.
-    _sendResize(terminal.viewWidth, terminal.viewHeight);
+    _rebuildTerminalFromHistory();
   }
 
   void updateColumnWidth(int fixedCols) {
     if (_fixedCols == fixedCols) return;
     _fixedCols = fixedCols;
-    _sendResize(terminal.viewWidth, terminal.viewHeight);
+    if (_lineWrap) {
+      _sendResize(terminal.viewWidth, terminal.viewHeight);
+      return;
+    }
+    _rebuildTerminalFromHistory();
   }
 
   void _setState(TerminalConnectionState s, [String? err]) {
@@ -199,7 +203,9 @@ class TerminalSession extends ChangeNotifier {
         _terminal = next;
         _terminalGeneration++;
         _receivedReplay = true;
-        _pendingReplay = (frame['d'] as String?) ?? '';
+        final replay = (frame['d'] as String?) ?? '';
+        _resetRenderHistory(replay);
+        _pendingReplay = replay;
         _pendingOut.clear();
         _connectionReady = false;
         final replayGeneration = _terminalGeneration;
@@ -208,6 +214,7 @@ class TerminalSession extends ChangeNotifier {
       case 'out':
         if (!_receivedReplay) return;
         final data = (frame['d'] as String?) ?? '';
+        _appendRenderHistory(data);
         if (!_connectionReady) {
           _pendingOut.add(data);
           return;
@@ -216,6 +223,7 @@ class TerminalSession extends ChangeNotifier {
       case 'exit':
         final code = frame['code'];
         final message = '\r\n[process exited code=$code]\r\n';
+        _appendRenderHistory(message);
         if (_receivedReplay && !_connectionReady) {
           _pendingOut.add(message);
         } else {
@@ -254,6 +262,44 @@ class TerminalSession extends ChangeNotifier {
       _connectionReady = true;
       _startPing();
       _sendResize(terminal.viewWidth, terminal.viewHeight);
+    }
+  }
+
+  void _rebuildTerminalFromHistory() {
+    if (!_receivedReplay) {
+      _sendResize(terminal.viewWidth, terminal.viewHeight);
+      return;
+    }
+    final replay = _renderHistory.join();
+    final old = terminal;
+    old.onOutput = null;
+    old.onResize = null;
+    final next = _newTerminal(cols: old.viewWidth, rows: old.viewHeight);
+    _terminal = next;
+    _terminalGeneration++;
+    _pendingReplay = replay;
+    _pendingOut.clear();
+    _connectionReady = false;
+    _lastSentCols = null;
+    _lastSentRows = null;
+    final replayGeneration = _terminalGeneration;
+    _schedulePendingReplayApply(replayGeneration);
+  }
+
+  void _resetRenderHistory(String data) {
+    _renderHistory.clear();
+    _renderHistoryBytes = 0;
+    _appendRenderHistory(data);
+  }
+
+  void _appendRenderHistory(String data) {
+    if (data.isEmpty) return;
+    _renderHistory.add(data);
+    _renderHistoryBytes += utf8.encode(data).length;
+    while (_renderHistoryBytes > _renderHistoryLimitBytes &&
+        _renderHistory.length > 1) {
+      final removed = _renderHistory.removeAt(0);
+      _renderHistoryBytes -= utf8.encode(removed).length;
     }
   }
 
