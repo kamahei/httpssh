@@ -98,7 +98,7 @@ class _TerminalWorkspaceState extends ConsumerState<TerminalWorkspace>
       );
 
   bool? _lineWrapOverrideFor(String sessionId) =>
-      ref.read(sessionLineWrapOverridesProvider).valueOrNull?[sessionId];
+      ref.read(sessionLineWrapOverridesProvider).value?[sessionId];
 
   _TabModel _makeTab(SessionInfo info) {
     final override = _lineWrapOverrideFor(info.id);

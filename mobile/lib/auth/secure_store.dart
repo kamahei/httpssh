@@ -4,10 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// profile id. Keys take the form `profile.<id>.<field>`.
 class SecureStore {
   SecureStore([FlutterSecureStorage? storage])
-      : _storage = storage ??
-            const FlutterSecureStorage(
-              aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            );
+      : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 
