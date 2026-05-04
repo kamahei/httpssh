@@ -193,7 +193,18 @@ func (s *Session) publishOutput(data []byte, cwdPaths []string, now time.Time) {
 		s.cwd = path
 	}
 	if !dropFrame {
+		freshDuringResize := !s.resizeRepaintUntil.IsZero() && now.Before(s.resizeRepaintUntil)
 		for sub := range s.subs {
+			// Skip the next emission to a freshly-subscribed client
+			// when we're inside a resize-repaint window. The client
+			// already received the full scrollback via `replay` at
+			// Subscribe time, so the ConPTY's resize-induced redraw
+			// would just rewrite the same viewport on top of itself.
+			// 2*resizeRepaintWindow gives the client room to settle
+			// its layout and send its first resize.
+			if freshDuringResize && now.Before(sub.subscribedAt.Add(2*resizeRepaintWindow)) {
+				continue
+			}
 			select {
 			case sub.out <- frame:
 			case <-sub.ctx.Done():
@@ -284,6 +295,14 @@ type subscriber struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	role   SubscriberRole
+	// subscribedAt is the moment Subscribe registered this client.
+	// Used to suppress the post-resize ConPTY repaint that fires when a
+	// freshly attached client (e.g. the mobile app) sends its initial
+	// resize after the server has already delivered a full scrollback
+	// replay: without this filter the visible viewport ends up written
+	// twice on that client (once via replay, once via the repaint
+	// burst).
+	subscribedAt time.Time
 }
 
 // Done returns a channel that closes when the subscription should end.
@@ -303,7 +322,13 @@ func (sub *subscriber) Done() <-chan struct{} { return sub.ctx.Done() }
 func (s *Session) Subscribe(ctx context.Context, role SubscriberRole) (frames <-chan ServerFrame, done <-chan struct{}, unsubscribe func()) {
 	ch := make(chan ServerFrame, defaultSubscriberQueue)
 	subCtx, cancel := context.WithCancel(ctx)
-	sub := &subscriber{out: ch, ctx: subCtx, cancel: cancel, role: role}
+	sub := &subscriber{
+		out:          ch,
+		ctx:          subCtx,
+		cancel:       cancel,
+		role:         role,
+		subscribedAt: time.Now(),
+	}
 
 	s.mu.Lock()
 	if s.closed {

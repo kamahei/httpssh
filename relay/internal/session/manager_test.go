@@ -603,6 +603,61 @@ func TestSession_ExitClosesSubscribers(t *testing.T) {
 	}
 }
 
+// TestSession_FreshSubscriberSkipsResizeRepaint verifies that a client
+// who just received a `replay` does not also receive the post-resize
+// ConPTY repaint burst — that's the bug where mobile saw the most
+// recent log lines twice when attaching to a session a PC was already
+// driving.
+func TestSession_FreshSubscriberSkipsResizeRepaint(t *testing.T) {
+	m, _ := newTestManager(t, time.Hour)
+	s, err := m.Create("pwsh", 80, 24, "", -1)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	pty := s.pty.(*fakePTY)
+
+	// Old subscriber (PC), attached well before the resize.
+	old, _, unsubOld := s.Subscribe(context.Background(), SubscriberRoleHost)
+	defer unsubOld()
+	<-old // drain replay
+
+	// Wait long enough that "old" is no longer in the freshness window.
+	time.Sleep(2 * resizeRepaintWindow)
+
+	// Fresh subscriber (mobile), attaches right before requesting a
+	// resize.
+	fresh, _, unsubFresh := s.Subscribe(context.Background(), "")
+	defer unsubFresh()
+	<-fresh // drain replay
+
+	if err := s.Resize(40, 12); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+
+	// Simulate ConPTY's repaint burst that does NOT match the global
+	// heuristic (e.g. an alt-screen redraw): one chunk of bytes with
+	// no obvious "hide cursor / 2x erase line" pattern.
+	pty.readCh <- []byte("\x1b[H redraw payload")
+
+	// The old subscriber must still see this frame.
+	select {
+	case f := <-old:
+		if f.T != FrameOut {
+			t.Fatalf("old got frame t=%q want %q", f.T, FrameOut)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old subscriber did not receive the post-resize frame")
+	}
+
+	// The fresh subscriber must NOT see this frame.
+	select {
+	case f := <-fresh:
+		t.Fatalf("fresh subscriber unexpectedly received frame %+v", f)
+	case <-time.After(150 * time.Millisecond):
+		// Good: nothing arrived during the freshness window.
+	}
+}
+
 func TestSession_HostAttached(t *testing.T) {
 	m, _ := newTestManager(t, time.Hour)
 	s, err := m.Create("pwsh", 80, 24, "", -1)
