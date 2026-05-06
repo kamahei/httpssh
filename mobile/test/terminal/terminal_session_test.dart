@@ -54,7 +54,11 @@ void main() {
           fixedCols: 120,
         );
 
-        await _waitFor(() => session!.terminalGeneration == 1);
+        await _waitFor(
+          () =>
+              session!.terminalGeneration == 1 &&
+              session!.pendingOutCountForTesting > 0,
+        );
       });
 
       expect(session!.terminal.buffer.getText(), isNot(contains('replay')));
@@ -121,7 +125,11 @@ void main() {
           fixedCols: 120,
         );
 
-        await _waitFor(() => session!.terminalGeneration == 1);
+        await _waitFor(
+          () =>
+              session!.terminalGeneration == 1 &&
+              session!.pendingOutCountForTesting > 0,
+        );
       });
 
       session!.applyPendingReplayForTesting();

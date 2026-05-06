@@ -308,6 +308,9 @@ class TerminalSession extends ChangeNotifier {
     _applyPendingReplay(_terminalGeneration);
   }
 
+  @visibleForTesting
+  int get pendingOutCountForTesting => _pendingOut.length;
+
   void _sendInput(String data) {
     if (!_connectionReady) return;
     _send({'t': 'in', 'd': data});
