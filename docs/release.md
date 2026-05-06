@@ -12,9 +12,9 @@ Release tags must look like `v0.1.0` or `v0.1.0-beta.1`.
 
 The default Android application ID and iOS bundle identifier are both `com.example.httpssh` (placeholder for the OSS source). For store releases override these to your own ID — see `mobile/README.md` for the local override mechanism (`android/local.properties` and `ios/Flutter/Local.xcconfig`, both gitignored).
 
-## Required GitHub Secrets
+## Optional GitHub Secrets For Android Signing
 
-The Android Release APK must be signed with a stable release key. Configure these repository secrets before publishing a tag:
+For store-grade Android Release APKs, sign with a stable release key. Configure these repository secrets before publishing a tag:
 
 | Secret | Purpose |
 |---|---|
@@ -23,7 +23,7 @@ The Android Release APK must be signed with a stable release key. Configure thes
 | `ANDROID_KEY_ALIAS` | Key alias inside the keystore |
 | `ANDROID_KEY_PASSWORD` | Key password |
 
-The release workflow fails early if any signing secret is missing. This prevents publishing an APK signed with a throwaway debug key that cannot be upgraded reliably.
+If any of these secrets are missing, the release workflow logs a warning and falls back to Android debug signing so the APK still builds. Debug-signed builds are fine for OSS distribution and sideloading, but cannot be upgraded by an APK signed with a different key, and they are rejected by Google Play. Configure all four secrets before publishing builds intended for store upload or for upgrading a previously stably-signed release.
 
 ## Create An Android Release Key
 

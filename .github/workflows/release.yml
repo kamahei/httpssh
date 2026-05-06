@@ -92,10 +92,15 @@ jobs:
             "ANDROID_KEY_ALIAS",
             "ANDROID_KEY_PASSWORD"
           )
+          $missing = @()
           foreach ($name in $required) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Missing GitHub secret: $name. See docs/release.md."
+              $missing += $name
             }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "::warning::Android release signing secrets not configured ($($missing -join ', ')). Falling back to debug signing. See docs/release.md to configure a stable upload key."
+            return
           }
 
           [IO.File]::WriteAllBytes(

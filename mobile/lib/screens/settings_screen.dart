@@ -276,7 +276,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           AboutListTile(
             applicationName: t.appTitle,
-            applicationVersion: '0.3.0',
+            applicationVersion: '0.4.0',
             child: Text(t.settingsAbout),
           ),
         ],
